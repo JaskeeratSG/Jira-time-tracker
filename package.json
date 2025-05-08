@@ -1,0 +1,95 @@
+{
+    "name": "jira-time-tracker",
+    "displayName": "JIRA Time Tracker",
+    "description": "Track and log time to JIRA tickets",
+    "version": "0.0.5",
+    "engines": {
+        "vscode": "^1.60.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "activationEvents": [
+        "onCommand:jira-time-logger.startTimer",
+        "onCommand:jira-time-logger.stopTimer",
+        "onCommand:jira-time-logger.resumeTimer",
+        "onCommand:jira-time-logger.finishAndLog"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "jira-time-logger.startTimer",
+                "title": "JIRA: Start Timer"
+            },
+            {
+                "command": "jira-time-logger.stopTimer",
+                "title": "JIRA: Stop Timer"
+            },
+            {
+                "command": "jira-time-logger.resumeTimer",
+                "title": "JIRA: Resume Timer"
+            },
+            {
+                "command": "jira-time-logger.finishAndLog",
+                "title": "JIRA: Finish and Log Time"
+            },
+            {
+                "command": "jira-time-tracker.showCommandPanel",
+                "title": "Show Jira Time Tracker Panel"
+            }
+        ],
+        "configuration": {
+            "title": "JIRA Time Tracker",
+            "properties": {
+                "jiraTimeTracker.baseUrl": {
+                    "type": "string",
+                    "default": "https://jkchhabra99.atlassian.net",
+                    "description": "Your JIRA instance URL"
+                },
+                "jiraTimeTracker.email": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Your JIRA email"
+                },
+                "jiraTimeTracker.apiToken": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Your JIRA API token"
+                }
+            }
+        },
+        "views": {
+            "explorer": [{
+                "type": "webview",
+                "id": "jiraTimeTracker.sidebar",
+                "name": "Jira Time Tracker",
+                "icon": "$(clock)"
+            }]
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "lint": "eslint src --ext ts",
+        "test:jira": "ts-node src/test/jiraService.test.ts",
+        "build": "npm run compile",
+        "package": "vsce package",
+        "deploy": "npm run build && npm run package",
+        "test:git": "ts-node src/test/git.test.ts"
+    },
+    "devDependencies": {
+        "@types/node": "^16.x",
+        "@types/vscode": "^1.60.0",
+        "@typescript-eslint/eslint-plugin": "^5.x",
+        "@typescript-eslint/parser": "^5.x",
+        "eslint": "^8.x",
+        "ts-node": "^10.9.2",
+        "typescript": "^4.x"
+    },
+    "dependencies": {
+        "axios": "^0.27.2",
+        "dotenv": "^16.5.0"
+    }
+}
