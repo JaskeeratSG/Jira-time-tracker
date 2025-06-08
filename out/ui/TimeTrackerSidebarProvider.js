@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TimeTrackerSidebarProvider = void 0;
 const vscode = require("vscode");
+const GitService_1 = require("../services/GitService");
 class TimeTrackerSidebarProvider {
     constructor(_extensionUri, timeLogger) {
         this._extensionUri = _extensionUri;
@@ -57,18 +58,42 @@ class TimeTrackerSidebarProvider {
                             break;
                         case 'loadProjects':
                             try {
-                                this._outputChannel.appendLine('Loading projects...');
-                                const projects = await this._timeLogger.jiraService.getProjects();
-                                this._outputChannel.appendLine('Projects loaded: ' + JSON.stringify(projects, null, 2));
+                                const email = data.email;
+                                this._outputChannel.appendLine('Starting to load projects for email: ' + email);
+                                // Validate email
+                                if (!email) {
+                                    this._outputChannel.appendLine('Error: No email provided');
+                                    throw new Error('Please enter your Jira email');
+                                }
+                                // Get projects filtered by the user's email
+                                this._outputChannel.appendLine('Calling getProjectsByUserEmail...');
+                                const projects = await this._timeLogger.jiraService.getProjectsByUserEmail(email);
+                                this._outputChannel.appendLine('Projects loaded successfully: ' + JSON.stringify(projects, null, 2));
+                                // Send projects to webview
+                                this._outputChannel.appendLine('Sending projects to webview...');
                                 this._view?.webview.postMessage({
                                     type: 'projects',
                                     projects: projects
                                 });
-                                this._showNotification('Projects loaded successfully!', 'success');
+                                if (projects.length === 0) {
+                                    this._outputChannel.appendLine('No projects found for user');
+                                    this._showNotification('No projects assigned to this user', 'error');
+                                }
+                                else {
+                                    this._outputChannel.appendLine(`Found ${projects.length} projects for user`);
+                                    this._showNotification(`Projects loaded for ${email}`, 'success');
+                                }
                             }
                             catch (error) {
                                 this._outputChannel.appendLine('Failed to load projects: ' + error.message);
+                                if (error.response) {
+                                    this._outputChannel.appendLine('JIRA API Response: ' + JSON.stringify(error.response.data, null, 2));
+                                }
                                 this._showNotification('Failed to load projects: ' + error.message, 'error');
+                                // Reset the button state
+                                this._view?.webview.postMessage({
+                                    type: 'load-failed'
+                                });
                             }
                             break;
                         case 'loadIssues':
@@ -118,6 +143,12 @@ class TimeTrackerSidebarProvider {
                                 this._showNotification('Failed to load branch info', 'error');
                             }
                             break;
+                        case 'git-email':
+                            this._view?.webview.postMessage({
+                                type: 'git-email',
+                                email: data.email
+                            });
+                            break;
                     }
                 }
                 catch (error) {
@@ -155,30 +186,42 @@ class TimeTrackerSidebarProvider {
         try {
             this._outputChannel.appendLine('Loading branch info...');
             const branchInfo = await this._timeLogger.getBranchTicketInfo();
+            // Get Git email
+            const gitService = new GitService_1.GitService();
+            const gitEmail = await gitService.getUserEmail();
+            // Send Git email to webview
+            this._view?.webview.postMessage({
+                type: 'git-email',
+                email: gitEmail
+            });
             if (branchInfo) {
-                // First load projects
-                this._outputChannel.appendLine('Loading projects for branch info...');
-                const projects = await this._timeLogger.jiraService.getProjects();
-                this._outputChannel.appendLine('Projects loaded in branch info: ' + JSON.stringify(projects, null, 2));
-                this._view?.webview.postMessage({
-                    type: 'projects',
-                    projects: projects
-                });
-                // Then load issues for the project
-                this._outputChannel.appendLine(`Loading issues for project ${branchInfo.projectKey}...`);
-                const issues = await this._timeLogger.jiraService.getProjectIssues(branchInfo.projectKey);
-                this._outputChannel.appendLine(`Issues loaded for project ${branchInfo.projectKey}: ` + JSON.stringify(issues, null, 2));
-                this._view?.webview.postMessage({
-                    type: 'issues',
-                    issues: issues
-                });
-                // Finally set the selected values
-                this._view?.webview.postMessage({
-                    type: 'branch-info',
-                    projectKey: branchInfo.projectKey,
-                    issueKey: branchInfo.issueKey
-                });
-                this._showNotification(`Loaded ticket from branch: ${branchInfo.issueKey}`, 'info');
+                // Get projects for the current user's email
+                const config = vscode.workspace.getConfiguration('jiraTimeTracker');
+                const userEmail = config.get('jiraEmail');
+                if (userEmail) {
+                    this._outputChannel.appendLine('Loading projects for user email...');
+                    const projects = await this._timeLogger.jiraService.getProjectsByUserEmail(userEmail);
+                    this._outputChannel.appendLine('Projects loaded in branch info: ' + JSON.stringify(projects, null, 2));
+                    this._view?.webview.postMessage({
+                        type: 'projects',
+                        projects: projects
+                    });
+                    // Then load issues for the project
+                    this._outputChannel.appendLine(`Loading issues for project ${branchInfo.projectKey}...`);
+                    const issues = await this._timeLogger.jiraService.getProjectIssues(branchInfo.projectKey);
+                    this._outputChannel.appendLine(`Issues loaded for project ${branchInfo.projectKey}: ` + JSON.stringify(issues, null, 2));
+                    this._view?.webview.postMessage({
+                        type: 'issues',
+                        issues: issues
+                    });
+                    // Finally set the selected values
+                    this._view?.webview.postMessage({
+                        type: 'branch-info',
+                        projectKey: branchInfo.projectKey,
+                        issueKey: branchInfo.issueKey
+                    });
+                    this._showNotification(`Loaded ticket from branch: ${branchInfo.issueKey}`, 'info');
+                }
             }
         }
         catch (error) {
@@ -473,6 +516,63 @@ class TimeTrackerSidebarProvider {
                     width: 100%;
                     box-sizing: border-box;
                 }
+                .email-section {
+                    display: flex;
+                    gap: 8px;
+                    margin-bottom: 16px;
+                    align-items: center;
+                    padding: 12px;
+                    background: var(--vscode-editor-inactiveSelectionBackground);
+                    border-radius: 4px;
+                    width: 100%;
+                    box-sizing: border-box;
+                }
+                
+                .email-input {
+                    flex: 1;
+                    min-width: 0; /* Prevents flex item from overflowing */
+                    padding: 8px;
+                    background: var(--vscode-input-background);
+                    color: var(--vscode-input-foreground);
+                    border: 1px solid var(--vscode-input-border);
+                    border-radius: 4px;
+                    font-size: 13px;
+                }
+                
+                .auth-button {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 8px;
+                    padding: 8px 12px;
+                    background: var(--vscode-button-background);
+                    color: var(--vscode-button-foreground);
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 13px;
+                    white-space: nowrap;
+                    user-select: none;
+                    min-width: 120px;
+                    text-align: center;
+                }
+                
+                .auth-button:disabled {
+                    opacity: 0.7;
+                    cursor: not-allowed;
+                }
+
+                .auth-button .loader {
+                    display: none;
+                }
+
+                .auth-button.loading .loader {
+                    display: inline-block;
+                }
+
+                .auth-button.loading span {
+                    display: none;
+                }
             </style>
             <script>
                 const vscode = acquireVsCodeApi();
@@ -675,10 +775,49 @@ class TimeTrackerSidebarProvider {
 
                 window.addEventListener('message', event => {
                     const message = event.data;
+                    console.log('Received message:', message);
+                    
                     switch (message.type) {
                         case 'projects':
+                            console.log('Received projects:', message.projects);
                             allProjects = message.projects;
-                            showNotification('Projects loaded successfully', 'success');
+                            
+                            // Reset button state
+                            const loadProjectsBtn = document.getElementById('loadProjectsBtn');
+                            if (loadProjectsBtn) {
+                                loadProjectsBtn.disabled = false;
+                                loadProjectsBtn.classList.remove('loading');
+                            }
+                            
+                            // Update project dropdown
+                            const projectOptions = document.getElementById('projectOptions');
+                            if (projectOptions) {
+                                if (allProjects.length === 0) {
+                                    projectOptions.innerHTML = '<div class="dropdown-option">No projects available</div>';
+                                } else {
+                                    projectOptions.innerHTML = allProjects.map(project => 
+                                        \`<div class="dropdown-option" onclick="window.selectProject('\${project.key}')">
+                                            <strong>\${project.key}</strong>
+                                            <span>\${project.name}</span>
+                                        </div>\`
+                                    ).join('');
+                                }
+                            }
+                            
+                            // Clear issue selection
+                            const issueSelect = document.getElementById('issueSelect');
+                            if (issueSelect) {
+                                issueSelect.innerHTML = '<span>Select Issue</span><span>▼</span>';
+                            }
+                            allIssues = [];
+                            break;
+                        case 'load-failed':
+                            // Reset button state
+                            const btn = document.getElementById('loadProjectsBtn');
+                            if (btn) {
+                                btn.disabled = false;
+                                btn.classList.remove('loading');
+                            }
                             break;
                         case 'issues':
                             allIssues = message.issues;
@@ -721,6 +860,12 @@ class TimeTrackerSidebarProvider {
                             const manualInput = document.getElementById('manualTimeInput');
                             if (manualInput) manualInput.value = '';
                             break;
+                        case 'git-email':
+                            const emailInput = document.getElementById('emailInput');
+                            if (emailInput && message.email) {
+                                emailInput.value = message.email;
+                            }
+                            break;
                     }
                 });
 
@@ -739,10 +884,46 @@ class TimeTrackerSidebarProvider {
                 vscode.postMessage({ type: 'loadProjects' });
                 // Initialize button states
                 updateButtonStates();
+
+                document.addEventListener('DOMContentLoaded', function() {
+                    const loadProjectsBtn = document.getElementById('loadProjectsBtn');
+                    if (loadProjectsBtn) {
+                        loadProjectsBtn.addEventListener('click', function() {
+                            const email = document.getElementById('emailInput').value;
+                            console.log('Load Projects button clicked with email:', email);
+                            
+                            if (!email) {
+                                console.log('No email provided');
+                                showNotification('Please enter your Jira email', 'error');
+                                return;
+                            }
+                            
+                            // Show loading state
+                            console.log('Setting button to loading state');
+                            loadProjectsBtn.disabled = true;
+                            loadProjectsBtn.classList.add('loading');
+                            
+                            // Send message to extension
+                            console.log('Sending loadProjects message to extension');
+                            vscode.postMessage({ 
+                                type: 'loadProjects',
+                                email: email
+                            });
+                        });
+                    }
+                });
             </script>
         </head>
         <body>
             <div class="notification-container" id="notifications"></div>
+            
+            <div class="email-section">
+                <input type="email" id="emailInput" class="email-input" placeholder="Enter your Jira email">
+                <button id="loadProjectsBtn" class="auth-button" type="button">
+                    <div class="loader"></div>
+                    <span>Load Projects</span>
+                </button>
+            </div>
             
             <div class="section">
                 <div class="section-title">Project & Issue</div>

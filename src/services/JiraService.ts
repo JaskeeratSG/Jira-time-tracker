@@ -97,6 +97,10 @@ export class JiraService {
     }
 
     async getProjects(): Promise<JiraProject[]> {
+        if (!this.config.email || !this.config.apiToken) {
+            throw new Error('JIRA credentials not configured. Please set them in settings.');
+        }
+
         try {
             const response = await axios.get(
                 `${this.config.baseUrl}/rest/api/2/project`,
@@ -114,6 +118,10 @@ export class JiraService {
             }));
         } catch (error: any) {
             console.error('Failed to fetch projects:', error);
+            if (error.response) {
+                console.error('JIRA API Response:', error.response.data);
+                throw new Error(`Failed to fetch projects: ${error.response.data.message || error.message}`);
+            }
             throw new Error('Failed to fetch projects from JIRA');
         }
     }
@@ -133,6 +141,40 @@ export class JiraService {
         } catch (error: any) {
             console.error('Failed to fetch project issues:', error);
             throw new Error(`Failed to fetch issues for project ${projectKey}`);
+        }
+    }
+
+    async getProjectsByUserEmail(email: string): Promise<JiraProject[]> {
+        if (!this.config.email || !this.config.apiToken) {
+            throw new Error('JIRA credentials not configured. Please set them in settings.');
+        }
+
+        try {
+            // First get all projects
+            const allProjects = await this.getProjects();
+            console.log('All projects loaded:', allProjects);
+            
+            // Then filter projects where the user has issues assigned
+            const jql = `assignee = "${email}" ORDER BY updated DESC`;
+            const response = await this._makeRequest(`/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=project`);
+            console.log('User issues response:', response);
+            
+            // Get unique project keys from the issues
+            const projectKeys = new Set(response.issues.map((issue: any) => issue.fields.project.key));
+            console.log('Project keys found:', Array.from(projectKeys));
+            
+            // Filter the original projects list to only include projects where the user has issues
+            const filteredProjects = allProjects.filter(project => projectKeys.has(project.key));
+            console.log('Filtered projects:', filteredProjects);
+            
+            return filteredProjects;
+        } catch (error: any) {
+            console.error('Failed to fetch projects for user:', error);
+            if (error.response) {
+                console.error('JIRA API Response:', error.response.data);
+                throw new Error(`Failed to fetch projects: ${error.response.data.message || error.message}`);
+            }
+            throw new Error('Failed to fetch projects for user from JIRA');
         }
     }
 
