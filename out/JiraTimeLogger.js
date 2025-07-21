@@ -16,6 +16,10 @@ class JiraTimeLogger {
         this.jiraService = new JiraService_1.JiraService();
         this.updateStatusBar();
     }
+    updateJiraService(authService) {
+        // Create a new JiraService with the authentication service
+        this.jiraService = new JiraService_1.JiraService(authService);
+    }
     async startTimer() {
         if (this.isRunning) {
             vscode.window.showWarningMessage('Timer is already running');

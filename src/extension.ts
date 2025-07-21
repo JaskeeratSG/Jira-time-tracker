@@ -17,7 +17,7 @@ export function activate(context: vscode.ExtensionContext) {
         outputChannel.appendLine('JiraTimeLogger instance created');
 
         // Register sidebar provider
-        const sidebarProvider = new TimeTrackerSidebarProvider(context.extensionUri, timeLogger);
+        const sidebarProvider = new TimeTrackerSidebarProvider(context.extensionUri, timeLogger, context);
         context.subscriptions.push(
             vscode.window.registerWebviewViewProvider(
                 TimeTrackerSidebarProvider.viewType,

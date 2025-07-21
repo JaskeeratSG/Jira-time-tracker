@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { JiraService } from './services/JiraService';
+import { AuthenticationService } from './services/AuthenticationService';
 import { getBranchName } from './utils/git';
 
 export class JiraTimeLogger {
@@ -16,6 +17,11 @@ export class JiraTimeLogger {
         this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
         this.jiraService = new JiraService();
         this.updateStatusBar();
+    }
+
+    updateJiraService(authService: AuthenticationService) {
+        // Create a new JiraService with the authentication service
+        (this as any).jiraService = new JiraService(authService);
     }
 
     async startTimer() {
