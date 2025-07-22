@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { getJiraConfig } from '../config/settings';
+import { AuthenticationService, UserCredentials } from './AuthenticationService';
 
 interface JiraProject {
     id: string;
@@ -19,26 +20,58 @@ interface JiraIssue {
 }
 
 export class JiraService {
-    private config = getJiraConfig();
+    private authService: AuthenticationService | null = null;
+
+    constructor(authService?: AuthenticationService) {
+        this.authService = authService || null;
+    }
+
+    /**
+     * Get current user credentials (from auth service or fallback to settings)
+     */
+    private async getCurrentCredentials(): Promise<UserCredentials> {
+        // Try to get from authentication service first
+        if (this.authService) {
+            const credentials = await this.authService.getActiveUserCredentials();
+            if (credentials) {
+                return credentials;
+            }
+            
+            // Fallback to settings if no authenticated user
+            const fallback = this.authService.getFallbackCredentials();
+            if (fallback) {
+                return fallback;
+            }
+        }
+
+        // Legacy fallback - get from settings
+        const config = getJiraConfig();
+        if (!config.email || !config.apiToken || !config.baseUrl) {
+            throw new Error('No JIRA credentials found. Please sign in or configure settings.');
+        }
+
+        return {
+            email: config.email,
+            apiToken: config.apiToken,
+            baseUrl: config.baseUrl
+        };
+    }
 
     async logTime(ticketId: string, timeSpentMinutes: number) {
         const endpoint = `/rest/api/2/issue/${ticketId}/worklog`;
-        
-        if (!this.config.email || !this.config.apiToken) {
-            throw new Error('JIRA credentials not configured. Please set them in settings.');
-        }
+        const credentials = await this.getCurrentCredentials();
 
         try {
             const response = await axios.post(
-                `${this.config.baseUrl}${endpoint}`,
+                `${credentials.baseUrl}${endpoint}`,
                 {
                     timeSpentSeconds: timeSpentMinutes * 60,
-                    comment: 'Time logged via VS Code extension'
+                    comment: `Time logged via VS Code extension by ${credentials.email}`
                 },
                 {
                     auth: {
-                        username: this.config.email,
-                        password: this.config.apiToken
+                        username: credentials.email,
+                        password: credentials.apiToken
                     },
                     headers: {
                         'Content-Type': 'application/json'
@@ -52,13 +85,14 @@ export class JiraService {
     }
 
     async verifyTicketExists(ticketId: string): Promise<boolean> {
+        const credentials = await this.getCurrentCredentials();
         try {
             const response = await axios.get(
-                `${this.config.baseUrl}/rest/api/2/issue/${ticketId}`,
+                `${credentials.baseUrl}/rest/api/2/issue/${ticketId}`,
                 {
                     auth: {
-                        username: (this.config.email as string),
-                        password: (this.config.apiToken as string)
+                        username: credentials.email,
+                        password: credentials.apiToken
                     }
                 }
             );
@@ -73,15 +107,16 @@ export class JiraService {
     }
 
     async getRecentTickets(): Promise<Array<{ key: string; summary: string; }>> {
+        const credentials = await this.getCurrentCredentials();
         try {
             // JQL query to get recent tickets assigned to the user
             const jql = encodeURIComponent('assignee = currentUser() ORDER BY updated DESC');
             const response = await axios.get(
-                `${this.config.baseUrl}/rest/api/2/search?jql=${jql}&fields=summary&maxResults=10`,
+                `${credentials.baseUrl}/rest/api/2/search?jql=${jql}&fields=summary&maxResults=10`,
                 {
                     auth: {
-                        username: (this.config.email as string),
-                        password: (this.config.apiToken as string)
+                        username: credentials.email,
+                        password: credentials.apiToken
                     }
                 }
             );
@@ -97,13 +132,15 @@ export class JiraService {
     }
 
     async getProjects(): Promise<JiraProject[]> {
+        const credentials = await this.getCurrentCredentials();
+
         try {
             const response = await axios.get(
-                `${this.config.baseUrl}/rest/api/2/project`,
+                `${credentials.baseUrl}/rest/api/2/project`,
                 {
                     auth: {
-                        username: this.config.email as string,
-                        password: this.config.apiToken as string
+                        username: credentials.email,
+                        password: credentials.apiToken
                     }
                 }
             );
@@ -114,18 +151,20 @@ export class JiraService {
             }));
         } catch (error: any) {
             console.error('Failed to fetch projects:', error);
+            if (error.response) {
+                console.error('JIRA API Response:', error.response.data);
+                throw new Error(`Failed to fetch projects: ${error.response.data.message || error.message}`);
+            }
             throw new Error('Failed to fetch projects from JIRA');
         }
     }
 
     async getProjectIssues(projectKey: string): Promise<Array<{ key: string; summary: string; }>> {
-        if (!this.config.email || !this.config.apiToken) {
-            throw new Error('JIRA credentials not configured. Please set them in settings.');
-        }
+        const credentials = await this.getCurrentCredentials();
 
         try {
             const jql = `project = "${projectKey}" AND issuetype in (Bug, Story, Task) ORDER BY created DESC`;
-            const response = await this._makeRequest(`/rest/api/2/search?jql=${encodeURIComponent(jql)}`);
+            const response = await this._makeRequest(`/rest/api/2/search?jql=${encodeURIComponent(jql)}`, credentials);
             return response.issues.map((issue: any) => ({
                 key: issue.key,
                 summary: issue.fields.summary
@@ -136,14 +175,47 @@ export class JiraService {
         }
     }
 
-    private async _makeRequest(endpoint: string) {
+    async getProjectsByUserEmail(email: string): Promise<JiraProject[]> {
+        const credentials = await this.getCurrentCredentials();
+
+        try {
+            // First get all projects
+            const allProjects = await this.getProjects();
+            console.log('All projects loaded:', allProjects);
+            
+            // Then filter projects where the user has issues assigned
+            const jql = `assignee = "${email}" ORDER BY updated DESC`;
+            const response = await this._makeRequest(`/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=project`, credentials);
+            console.log('User issues response:', response);
+            
+            // Get unique project keys from the issues
+            const projectKeys = new Set(response.issues.map((issue: any) => issue.fields.project.key));
+            console.log('Project keys found:', Array.from(projectKeys));
+            
+            // Filter the original projects list to only include projects where the user has issues
+            const filteredProjects = allProjects.filter(project => projectKeys.has(project.key));
+            console.log('Filtered projects:', filteredProjects);
+            
+            return filteredProjects;
+        } catch (error: any) {
+            console.error('Failed to fetch projects for user:', error);
+            if (error.response) {
+                console.error('JIRA API Response:', error.response.data);
+                throw new Error(`Failed to fetch projects: ${error.response.data.message || error.message}`);
+            }
+            throw new Error('Failed to fetch projects for user from JIRA');
+        }
+    }
+
+    private async _makeRequest(endpoint: string, credentials?: UserCredentials) {
+        const creds = credentials || await this.getCurrentCredentials();
         try {
             const response = await axios.get(
-                `${this.config.baseUrl}${endpoint}`,
+                `${creds.baseUrl}${endpoint}`,
                 {
                     auth: {
-                        username: this.config.email as string,
-                        password: this.config.apiToken as string
+                        username: creds.email,
+                        password: creds.apiToken
                     }
                 }
             );

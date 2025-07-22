@@ -16,7 +16,7 @@ function activate(context) {
         const timeLogger = new JiraTimeLogger_1.JiraTimeLogger();
         outputChannel.appendLine('JiraTimeLogger instance created');
         // Register sidebar provider
-        const sidebarProvider = new TimeTrackerSidebarProvider_1.TimeTrackerSidebarProvider(context.extensionUri, timeLogger);
+        const sidebarProvider = new TimeTrackerSidebarProvider_1.TimeTrackerSidebarProvider(context.extensionUri, timeLogger, context);
         context.subscriptions.push(vscode.window.registerWebviewViewProvider(TimeTrackerSidebarProvider_1.TimeTrackerSidebarProvider.viewType, sidebarProvider));
         outputChannel.appendLine('Sidebar provider registered');
         let startTimer = vscode.commands.registerCommand('jira-time-logger.startTimer', () => {
