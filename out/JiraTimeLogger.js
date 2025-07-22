@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.JiraTimeLogger = void 0;
 const vscode = require("vscode");
 const JiraService_1 = require("./services/JiraService");
+const GitService_1 = require("./services/GitService");
 const git_1 = require("./utils/git");
 class JiraTimeLogger {
     constructor() {
@@ -184,9 +185,8 @@ class JiraTimeLogger {
     }
     async getTicketFromBranch() {
         const branchName = await (0, git_1.getBranchName)();
-        // Match branch patterns like feature/CTL-123, feat/CTL-123, or fix/CTL-123
-        const match = branchName.match(/(?:feature|feat|fix)\/([A-Z]+-\d+)/i);
-        return match ? match[1] : null;
+        const gitService = new GitService_1.GitService();
+        return gitService.extractTicketId(branchName);
     }
     isTracking() {
         return this.isRunning;
@@ -211,10 +211,17 @@ class JiraTimeLogger {
     }
     async logTime(ticket, timeSpent) {
         try {
-            // Convert time format (1h 30m) to minutes
-            const minutes = this.convertTimeToMinutes(timeSpent);
+            let minutes;
+            if (typeof timeSpent === 'number') {
+                // Already in minutes
+                minutes = timeSpent;
+            }
+            else {
+                // Convert time format (1h 30m) to minutes
+                minutes = this.convertTimeToMinutes(timeSpent);
+            }
             if (minutes <= 0) {
-                throw new Error('Invalid time format. Please use format like "1h 30m"');
+                throw new Error('Invalid time format. Please provide a positive number of minutes.');
             }
             // Log time using JiraService
             await this.jiraService.logTime(ticket, minutes);
@@ -264,17 +271,29 @@ class JiraTimeLogger {
     async getBranchTicketInfo() {
         try {
             const branchName = await (0, git_1.getBranchName)();
-            const match = branchName.match(/(?:feature|feat|fix)\/([A-Z]+)-(\d+)/i);
-            if (match) {
-                const projectKey = match[1];
-                const issueKey = `${projectKey}-${match[2]}`;
-                // Verify the ticket exists
-                const exists = await this.jiraService.verifyTicketExists(issueKey);
-                if (exists) {
-                    return { projectKey, issueKey };
-                }
+            const gitService = new GitService_1.GitService();
+            // Extract ticket ID from any branch pattern
+            const ticketId = gitService.extractTicketId(branchName);
+            if (!ticketId) {
+                console.log('No ticket ID found in branch name:', branchName);
+                return null;
             }
-            return null;
+            // Extract project key from ticket ID
+            const projectKey = gitService.extractProjectKey(ticketId);
+            if (!projectKey) {
+                console.log('Invalid ticket ID format:', ticketId);
+                return null;
+            }
+            // Verify the ticket exists in Jira
+            const exists = await this.jiraService.verifyTicketExists(ticketId);
+            if (exists) {
+                console.log('Branch ticket info found:', { projectKey, issueKey: ticketId });
+                return { projectKey, issueKey: ticketId };
+            }
+            else {
+                console.log('Ticket not found in Jira:', ticketId);
+                return null;
+            }
         }
         catch (error) {
             console.error('Error getting branch ticket info:', error);

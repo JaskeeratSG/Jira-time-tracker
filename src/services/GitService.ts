@@ -106,23 +106,43 @@ export class GitService {
     }
 
     /**
-     * Extract JIRA ticket ID from branch name
+     * Extract JIRA ticket ID from branch name (supports various patterns)
      * @param branchName The branch name to extract from
      * @returns string | null The extracted JIRA ticket ID or null if not found
      */
     public extractTicketId(branchName: string): string | null {
-        const match = branchName.match(/(?:feature|feat|fix)\/([A-Z]+-\d+)/i);
-        return match ? match[1] : null;
+        // Pattern 1: Jira-generated branches: SCRUM-2-implement-authentication
+        let match = branchName.match(/^([A-Z]+-\d+)(?:-.*)?$/i);
+        if (match) return match[1];
+        
+        // Pattern 2: Manual feature branches: feature/SCRUM-2 or feat/SCRUM-2-description
+        match = branchName.match(/(?:feature|feat|fix|bugfix)\/([A-Z]+-\d+)(?:-.*)?/i);
+        if (match) return match[1];
+        
+        // Pattern 3: Any branch containing ticket ID: any-prefix-SCRUM-2-any-suffix
+        match = branchName.match(/.*?([A-Z]+-\d+).*?/i);
+        if (match) return match[1];
+        
+        return null;
     }
 
     /**
-     * Validate if a branch name follows the expected format
+     * Validate if a branch name contains a valid JIRA ticket ID
      * @param branchName The branch name to validate
-     * @returns boolean Whether the branch name is valid
+     * @returns boolean Whether the branch name contains a valid ticket ID
      */
     public isValidBranchFormat(branchName: string): boolean {
-        const branchPattern = /^(feature|feat|fix)\/[A-Z]+-\d+/i;
-        return branchPattern.test(branchName);
+        return this.extractTicketId(branchName) !== null;
+    }
+
+    /**
+     * Extract project key from ticket ID
+     * @param ticketId The ticket ID (e.g., "SCRUM-2")
+     * @returns string | null The project key (e.g., "SCRUM") or null if invalid
+     */
+    public extractProjectKey(ticketId: string): string | null {
+        const match = ticketId.match(/^([A-Z]+)-\d+$/i);
+        return match ? match[1] : null;
     }
 
     /**

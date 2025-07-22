@@ -117,18 +117,26 @@ class TimeTrackerSidebarProvider {
                             try {
                                 if (!data.issueKey || !data.timeSpent) {
                                     this._showNotification('Please select an issue and enter time', 'error');
+                                    // Reset button state on error
+                                    this._view?.webview.postMessage({
+                                        type: 'manual-time-error'
+                                    });
                                     return;
                                 }
                                 await this._timeLogger.logTime(data.issueKey, data.timeSpent);
-                                this._showNotification(`Manually logged ${data.timeSpent} to ${data.issueKey}`, 'success');
-                                // Clear the input field
+                                this._showNotification(`Successfully logged ${data.timeSpent} minutes to ${data.issueKey}`, 'success');
+                                // Clear the input field and reset button on success
                                 this._view?.webview.postMessage({
                                     type: 'clear-manual-input'
                                 });
                             }
                             catch (error) {
                                 this._outputChannel.appendLine('Error logging manual time: ' + error.message);
-                                this._showNotification(error.message, 'error');
+                                this._showNotification(`Failed to log time: ${error.message}`, 'error');
+                                // Reset button state on error
+                                this._view?.webview.postMessage({
+                                    type: 'manual-time-error'
+                                });
                             }
                             break;
                         case 'loadBranchInfo':

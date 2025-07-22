@@ -693,7 +693,7 @@ export class ManualTimeLogComponent extends BaseComponent {
             <div class="section">
                 <div class="section-title">Manual Time Log</div>
                 <div class="manual-time">
-                    <input type="number" id="manualTimeInput" placeholder="Enter time in minutes (e.g., 90)">
+                    <input type="text" id="manualTimeInput" placeholder="Enter time (e.g., 5h, 30m, 1h 30m, 1.5h)">
                     <button class="button" onclick="submitManualTime()">Log Manual Time</button>
                 </div>
             </div>
@@ -1009,6 +1009,13 @@ export class JavaScriptComponent extends BaseComponent {
                             if (manualTimeInput) {
                                 manualTimeInput.value = '';
                             }
+                            
+                            // Reset button state
+                            const manualTimeBtn = document.querySelector('.manual-time .button');
+                            if (manualTimeBtn) {
+                                manualTimeBtn.disabled = false;
+                                manualTimeBtn.textContent = 'Log Manual Time';
+                            }
                             break;
                         case 'branch-info':
                             console.log('Received branch info:', message);
@@ -1047,6 +1054,14 @@ export class JavaScriptComponent extends BaseComponent {
                                     // Show helpful notification
                                     showNotification(\`Git email auto-detected: \${message.email}\`, 'info');
                                 }
+                            }
+                            break;
+                        case 'manual-time-error':
+                            // Reset button state on error
+                            const manualTimeBtnError = document.querySelector('.manual-time .button');
+                            if (manualTimeBtnError) {
+                                manualTimeBtnError.disabled = false;
+                                manualTimeBtnError.textContent = 'Log Manual Time';
                             }
                             break;
                     }
@@ -1133,16 +1148,23 @@ export class JavaScriptComponent extends BaseComponent {
                     const timeInput = document.getElementById('manualTimeInput');
                     
                     const issueKey = issueSelect ? issueSelect.value : '';
-                    const timeSpent = timeInput ? parseInt(timeInput.value) : 0;
+                    const timeSpent = timeInput ? timeInput.value.trim() : '';
                     
                     if (!issueKey) {
                         showNotification('Please select an issue first', 'error');
                         return;
                     }
                     
-                    if (!timeSpent || timeSpent <= 0) {
-                        showNotification('Please enter a valid time in minutes', 'error');
+                    if (!timeSpent) {
+                        showNotification('Please enter time (e.g., 5h, 30m, 1h 30m, 1.5h)', 'error');
                         return;
+                    }
+                    
+                    // Show loading state
+                    const manualTimeBtn = document.querySelector('.manual-time .button');
+                    if (manualTimeBtn) {
+                        manualTimeBtn.disabled = true;
+                        manualTimeBtn.textContent = 'Logging...';
                     }
                     
                     vscode.postMessage({
