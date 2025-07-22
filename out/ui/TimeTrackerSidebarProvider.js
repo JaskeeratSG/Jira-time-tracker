@@ -54,8 +54,8 @@ class TimeTrackerSidebarProvider {
                             this._showNotification('Timer resumed!', 'success');
                             break;
                         case 'submitTime':
-                            if (!this._timeLogger.isTracking()) {
-                                this._showNotification('No active timer to submit', 'error');
+                            if (!this._timeLogger.hasElapsedTime()) {
+                                this._showNotification('No time to submit', 'error');
                                 return;
                             }
                             this._outputChannel.appendLine('Submitting time');

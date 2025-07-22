@@ -191,6 +191,9 @@ class JiraTimeLogger {
     isTracking() {
         return this.isRunning;
     }
+    hasElapsedTime() {
+        return this.elapsedTime > 0 || this.isRunning;
+    }
     getCurrentTrackedTime() {
         if (!this.startTime && !this.elapsedTime) {
             return '00:00:00';

@@ -935,7 +935,7 @@ class JavaScriptComponent extends BaseComponent {
                                 }
                             }
                             
-                            updateButtonStates(message.isTracking);
+                            updateButtonStates(message.isTracking, message.time);
                             break;
                         case 'projects':
                             console.log('Received projects:', message.projects);
@@ -1086,7 +1086,7 @@ class JavaScriptComponent extends BaseComponent {
                     vscode.postMessage({ type: 'submitTime' });
                 }
 
-                function updateButtonStates(isTracking = false) {
+                function updateButtonStates(isTracking = false, currentTime = '00:00:00') {
                     const startBtn = document.getElementById('startBtn');
                     const stopBtn = document.getElementById('stopBtn');
                     const resumeBtn = document.getElementById('resumeBtn');
@@ -1095,7 +1095,11 @@ class JavaScriptComponent extends BaseComponent {
                     if (startBtn) startBtn.style.display = isTracking ? 'none' : 'inline-block';
                     if (stopBtn) stopBtn.style.display = isTracking ? 'inline-block' : 'none';
                     if (resumeBtn) resumeBtn.style.display = isTracking ? 'none' : 'inline-block';
-                    if (submitBtn) submitBtn.style.display = isTracking ? 'inline-block' : 'none';
+                    
+                    // Show submit button only if timer is running OR there's elapsed time to submit
+                    const hasElapsedTime = currentTime && currentTime !== '00:00:00';
+                    const shouldShowSubmit = isTracking || hasElapsedTime;
+                    if (submitBtn) submitBtn.style.display = shouldShowSubmit ? 'inline-block' : 'none';
                 }
 
                 // Project selection handler
