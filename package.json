@@ -37,6 +37,26 @@
             {
                 "command": "jira-time-tracker.showCommandPanel",
                 "title": "Show Jira Time Tracker Panel"
+            },
+            {
+                "command": "jira-time-tracker.autoStartTimer",
+                "title": "JIRA Auto: Start Timer"
+            },
+            {
+                "command": "jira-time-tracker.autoStopTimer",
+                "title": "JIRA Auto: Stop Timer"
+            },
+            {
+                "command": "jira-time-tracker.autoSubmitTime",
+                "title": "JIRA Auto: Submit Time"
+            },
+            {
+                "command": "jira-time-tracker.clearAutoDetection",
+                "title": "JIRA Auto: Clear Auto-Detection"
+            },
+            {
+                "command": "jira-time-tracker.showAutomationStatus",
+                "title": "JIRA Auto: Show Status"
             }
         ],
         "configuration": {
@@ -56,6 +76,44 @@
                     "type": "string",
                     "default": "",
                     "description": "Your JIRA API token"
+                },
+                "jiraTimeTracker.productive.organizationId": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Your Productive organization ID"
+                },
+                "jiraTimeTracker.productive.apiToken": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Your Productive API token"
+                },
+                "jiraTimeTracker.productive.baseUrl": {
+                    "type": "string",
+                    "default": "https://api.productive.io/api/v2",
+                    "description": "Productive API base URL"
+                },
+                "jiraTimeTracker.productive.defaultProjectId": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Default Productive project ID for time entries"
+                },
+                "jiraTimeTracker.productive.projectMapping": {
+                    "type": "object",
+                    "default": {},
+                    "description": "Mapping of Jira project keys to Productive project IDs (e.g., {'SCRUM': '123', 'DEV': '456'})",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "jiraTimeTracker.productive.personId": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Your Productive person ID (can be found by calling /people endpoint)"
+                },
+                "jiraTimeTracker.productive.defaultServiceId": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Your default Productive service ID (required for time logging)"
                 }
             }
         },
@@ -74,10 +132,16 @@
         "watch": "tsc -watch -p ./",
         "lint": "eslint src --ext ts",
         "test:jira": "ts-node src/test/jiraService.test.ts",
+        "test:git": "ts-node src/test/git.test.ts",
+        "test:time-logging": "ts-node src/test/run-time-logging-test.ts",
+        "test:discovery": "ts-node src/test/run-time-logging-test.ts discovery",
+        "test:full-logging": "ts-node src/test/run-time-logging-test.ts full",
+        "test:jira-branch-discovery": "ts-node src/test/jira-branch-discovery.ts",
+        "test:automation-workflow": "ts-node src/test/automation-workflow.test.ts",
+        "test:automation-validation": "ts-node src/test/automation-validation.test.ts",
         "build": "npm run compile",
         "package": "vsce package",
-        "deploy": "npm run build && npm run package",
-        "test:git": "ts-node src/test/git.test.ts"
+        "deploy": "npm run build && npm run package"
     },
     "devDependencies": {
         "@types/node": "^16.x",

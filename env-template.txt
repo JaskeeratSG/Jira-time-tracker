@@ -1,0 +1,17 @@
+# Copy this content to your .env file
+# Essential Productive.io API Configuration
+PRODUCTIVE_ORGANIZATION_ID=42335
+PRODUCTIVE_API_TOKEN=your-api-token-here
+PRODUCTIVE_BASE_URL=https://api.productive.io/api/v2
+
+# Your Person ID in Productive (found from authenticated user)
+PRODUCTIVE_PERSON_ID=934317
+
+# JIRA Configuration (optional - for integration)
+JIRA_BASE_URL=https://yourdomain.atlassian.net
+JIRA_API_TOKEN=your-jira-api-token
+
+# Note: The following will be extracted dynamically by the extension:
+# - Project ID: From project dropdown selection in extension
+# - Service ID: From services assigned to your user account
+# - Person ID: Auto-detected from first active user or configured above 

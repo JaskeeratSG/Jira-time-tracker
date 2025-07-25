@@ -557,12 +557,7 @@ class AuthenticationSectionComponent extends BaseComponent {
                     </div>
                 </div>
 
-                <!-- User Switcher -->
-                <div id="userSwitcher" class="user-switcher" style="display: none;">
-                    <div class="section-subtitle">Switch User</div>
-                    <div id="usersList" class="users-list"></div>
-                    <button id="addUserBtn" class="secondary-button">+ Add Another User</button>
-                </div>
+                <!-- Removed multi-user switcher for simplicity -->
                 
                 <!-- Load Projects Button -->
                 <div id="loadProjectsSection" style="display: none;">
@@ -750,13 +745,7 @@ class JavaScriptComponent extends BaseComponent {
                         });
                     }
                     
-                    // Add user button
-                    const addUserBtn = document.getElementById('addUserBtn');
-                    if (addUserBtn) {
-                        addUserBtn.addEventListener('click', function() {
-                            showSignInForm();
-                        });
-                    }
+                    // Removed add user button handler
                 }
                 
                 function checkAuthenticationStatus() {
@@ -766,7 +755,6 @@ class JavaScriptComponent extends BaseComponent {
                 function updateAuthenticationUI(authData) {
                     const currentUserDisplay = document.getElementById('currentUserDisplay');
                     const signInForm = document.getElementById('signInForm');
-                    const userSwitcher = document.getElementById('userSwitcher');
                     const loadProjectsSection = document.getElementById('loadProjectsSection');
                     const signInBtn = document.getElementById('signInBtn');
                     
@@ -789,7 +777,6 @@ class JavaScriptComponent extends BaseComponent {
                         
                         if (currentUserDisplay) currentUserDisplay.style.display = 'flex';
                         if (signInForm) signInForm.style.display = 'none';
-                        if (userSwitcher) userSwitcher.style.display = 'block';
                         if (loadProjectsSection) loadProjectsSection.style.display = 'block';
                         
                         // Clear sign in form
@@ -798,11 +785,13 @@ class JavaScriptComponent extends BaseComponent {
                         // Auto-load projects for the authenticated user
                         setTimeout(() => loadProjectsForUser(), 1000);
                     } else {
-                        // Show sign in form
+                        // Show sign in form and clear everything
                         if (currentUserDisplay) currentUserDisplay.style.display = 'none';
                         if (signInForm) signInForm.style.display = 'flex';
-                        if (userSwitcher) userSwitcher.style.display = 'none';
                         if (loadProjectsSection) loadProjectsSection.style.display = 'none';
+                        
+                        // Clear all dropdowns and selections
+                        clearAll();
                         
                         // Show error if provided
                         if (authData.error) {
@@ -811,49 +800,9 @@ class JavaScriptComponent extends BaseComponent {
                     }
                 }
                 
-                function updateUsersList(users) {
-                    const usersList = document.getElementById('usersList');
-                    if (!usersList) return;
-                    
-                    usersList.innerHTML = '';
-                    
-                    users.forEach(user => {
-                        const userItem = document.createElement('div');
-                        userItem.className = \`user-item \${user.isActive ? 'active' : ''}\`;
-                        userItem.innerHTML = \`
-                            <div class="user-item-info">
-                                <div class="user-item-name">\${user.displayName}</div>
-                                <div class="user-item-email">\${user.email}</div>
-                            </div>
-                            <div class="user-item-actions">
-                                \${!user.isActive ? '<button class="icon-button" onclick="switchUser(\\'' + user.email + '\\')">↻</button>' : ''}
-                                <button class="icon-button" onclick="removeUser('\\'' + user.email + '\\')" title="Remove user">×</button>
-                            </div>
-                        \`;
-                        
-                        if (!user.isActive) {
-                            userItem.addEventListener('click', () => switchUser(user.email));
-                        }
-                        
-                        usersList.appendChild(userItem);
-                    });
-                }
+                // Removed complex multi-user list management
                 
-                function switchUser(email) {
-                    vscode.postMessage({
-                        type: 'switchUser',
-                        email: email
-                    });
-                }
-                
-                function removeUser(email) {
-                    if (confirm(\`Remove user \${email}?\`)) {
-                        vscode.postMessage({
-                            type: 'removeUser',
-                            email: email
-                        });
-                    }
-                }
+                // Removed switch and remove user functions
                 
                 function showSignInForm() {
                     const signInForm = document.getElementById('signInForm');
@@ -913,9 +862,7 @@ class JavaScriptComponent extends BaseComponent {
                         case 'authenticationStatus':
                             updateAuthenticationUI(message);
                             break;
-                        case 'usersList':
-                            updateUsersList(message.users);
-                            break;
+                        // Removed usersList handler
                         case 'update':
                             const timeSpan = document.getElementById('timeDisplay');
                             const statusText = document.getElementById('statusText');
