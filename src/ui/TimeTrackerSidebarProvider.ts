@@ -82,8 +82,8 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
                             this._showNotification('Timer resumed!', 'success');
                             break;
                         case 'submitTime':
-                            if (!this._timeLogger.isTracking()) {
-                                this._showNotification('No active timer to submit', 'error');
+                            if (!this._timeLogger.hasElapsedTime()) {
+                                this._showNotification('No time to submit', 'error');
                                 return;
                             }
                             this._outputChannel.appendLine('Submitting time');
@@ -221,9 +221,6 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
                                     user: authenticatedUser
                                 });
 
-                                // Load users list for switcher
-                                await this._sendUsersToWebview();
-
                             } catch (error: any) {
                                 this._outputChannel.appendLine('Sign in failed: ' + error.message);
                                 this._showNotification(`Sign in failed: ${error.message}`, 'error');
@@ -236,6 +233,7 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
                             break;
                         case 'signOut':
                             try {
+                                // Sign out current user
                                 await this._authService.signOut();
                                 this._outputChannel.appendLine('User signed out');
                                 this._showNotification('Signed out successfully', 'info');
@@ -249,56 +247,7 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
                                 this._showNotification(`Sign out error: ${error.message}`, 'error');
                             }
                             break;
-                        case 'switchUser':
-                            try {
-                                const { email } = data;
-                                const user = await this._authService.switchUser(email);
-                                
-                                // Update the JiraService with the new authentication service
-                                this._timeLogger.updateJiraService(this._authService);
-
-                                this._outputChannel.appendLine(`Switched to user: ${user.email}`);
-                                this._showNotification(`Switched to ${user.displayName}`, 'success');
-                                
-                                this._view?.webview.postMessage({
-                                    type: 'authenticationStatus',
-                                    isAuthenticated: true,
-                                    user: user
-                                });
-
-                                // Refresh users list
-                                await this._sendUsersToWebview();
-
-                            } catch (error: any) {
-                                this._outputChannel.appendLine('User switch failed: ' + error.message);
-                                this._showNotification(`Switch failed: ${error.message}`, 'error');
-                            }
-                            break;
-                        case 'removeUser':
-                            try {
-                                const { email } = data;
-                                await this._authService.removeUser(email);
-                                
-                                this._outputChannel.appendLine(`Removed user: ${email}`);
-                                this._showNotification(`Removed user ${email}`, 'info');
-                                
-                                // Refresh users list
-                                await this._sendUsersToWebview();
-
-                                // Check if we need to update authentication status
-                                const isAuthenticated = await this._authService.isAuthenticated();
-                                if (!isAuthenticated) {
-                                    this._view?.webview.postMessage({
-                                        type: 'authenticationStatus',
-                                        isAuthenticated: false
-                                    });
-                                }
-
-                            } catch (error: any) {
-                                this._outputChannel.appendLine('Remove user failed: ' + error.message);
-                                this._showNotification(`Remove failed: ${error.message}`, 'error');
-                            }
-                            break;
+                        // Removed switch and remove user handlers
                         case 'checkAuthStatus':
                             try {
                                 const isAuthenticated = await this._authService.isAuthenticated();
@@ -309,7 +258,6 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
                                         isAuthenticated: true,
                                         user: activeUser
                                     });
-                                    await this._sendUsersToWebview();
                                 } else {
                                     this._view?.webview.postMessage({
                                         type: 'authenticationStatus',
@@ -342,17 +290,7 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    private async _sendUsersToWebview() {
-        try {
-            const users = await this._authService.getUsers();
-            this._view?.webview.postMessage({
-                type: 'usersList',
-                users: users
-            });
-        } catch (error: any) {
-            this._outputChannel.appendLine('Failed to load users: ' + error.message);
-        }
-    }
+    // Removed _sendUsersToWebview - no longer needed for single user approach
 
     private async _checkAuthenticationOnLoad() {
         try {
@@ -362,12 +300,11 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
                 // Update the JiraService with the authentication service
                 this._timeLogger.updateJiraService(this._authService);
                 
-                this._view?.webview.postMessage({
-                    type: 'authenticationStatus',
-                    isAuthenticated: true,
-                    user: activeUser
-                });
-                await this._sendUsersToWebview();
+                                    this._view?.webview.postMessage({
+                        type: 'authenticationStatus',
+                        isAuthenticated: true,
+                        user: activeUser
+                    });
                 this._outputChannel.appendLine(`Authentication restored for user: ${activeUser?.email}`);
             } else {
                 this._view?.webview.postMessage({

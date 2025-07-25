@@ -218,6 +218,10 @@ export class JiraTimeLogger {
         return this.isRunning;
     }
 
+    public hasElapsedTime(): boolean {
+        return this.elapsedTime > 0 || this.isRunning;
+    }
+
     public getCurrentTrackedTime(): string {
         if (!this.startTime && !this.elapsedTime) {
             return '00:00:00';
