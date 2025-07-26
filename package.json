@@ -13,7 +13,9 @@
         "onCommand:jira-time-logger.startTimer",
         "onCommand:jira-time-logger.stopTimer",
         "onCommand:jira-time-logger.resumeTimer",
-        "onCommand:jira-time-logger.finishAndLog"
+        "onCommand:jira-time-logger.finishAndLog",
+        "onCommand:jira-time-tracker.testProductiveConnection",
+        "onCommand:jira-time-tracker.showCurrentSettings"
     ],
     "main": "./out/extension.js",
     "contributes": {
@@ -57,6 +59,14 @@
             {
                 "command": "jira-time-tracker.showAutomationStatus",
                 "title": "JIRA Auto: Show Status"
+            },
+            {
+                "command": "jira-time-tracker.testProductiveConnection",
+                "title": "JIRA: Test Productive Connection"
+            },
+            {
+                "command": "jira-time-tracker.showCurrentSettings",
+                "title": "JIRA: Show Current Settings"
             }
         ],
         "configuration": {
@@ -137,8 +147,6 @@
         "test:discovery": "ts-node src/test/run-time-logging-test.ts discovery",
         "test:full-logging": "ts-node src/test/run-time-logging-test.ts full",
         "test:jira-branch-discovery": "ts-node src/test/jira-branch-discovery.ts",
-        "test:automation-workflow": "ts-node src/test/automation-workflow.test.ts",
-        "test:automation-validation": "ts-node src/test/automation-validation.test.ts",
         "build": "npm run compile",
         "package": "vsce package",
         "deploy": "npm run build && npm run package"

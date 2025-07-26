@@ -23,7 +23,8 @@ class AuthenticationService {
                 displayName: userInfo.displayName || credentials.email,
                 baseUrl: credentials.baseUrl,
                 isActive: true,
-                lastUsed: new Date()
+                lastUsed: new Date(),
+                hasProductiveAccess: userInfo.hasProductiveAccess
             };
             // Set as active user
             await this.setActiveUser(authenticatedUser);
@@ -34,21 +35,53 @@ class AuthenticationService {
         }
     }
     /**
-     * Verify user credentials by calling JIRA API
+     * Verify user credentials by calling both JIRA and Productive APIs
      */
     async verifyCredentials(credentials) {
         const axios = require('axios');
         try {
-            const response = await axios.get(`${credentials.baseUrl}/rest/api/2/myself`, {
+            // Test JIRA API access
+            console.log('Verifying JIRA credentials...');
+            const jiraResponse = await axios.get(`${credentials.baseUrl}/rest/api/2/myself`, {
                 auth: {
                     username: credentials.email,
                     password: credentials.apiToken
                 },
                 timeout: 10000
             });
+            const jiraResult = {
+                displayName: jiraResponse.data.displayName || jiraResponse.data.name,
+                accountId: jiraResponse.data.accountId
+            };
+            // Test Productive API access if token provided
+            let hasProductiveAccess = false;
+            if (credentials.productiveApiToken) {
+                try {
+                    console.log('Verifying Productive credentials...');
+                    // Get Productive config from environment
+                    const productiveOrgId = process.env.PRODUCTIVE_ORGANIZATION_ID || '42335';
+                    const productiveBaseUrl = process.env.PRODUCTIVE_BASE_URL || 'https://api.productive.io/api/v2';
+                    const productiveResponse = await axios.get(`${productiveBaseUrl}/organization_memberships`, {
+                        headers: {
+                            'Content-Type': 'application/vnd.api+json',
+                            'X-Auth-Token': credentials.productiveApiToken,
+                            'X-Organization-Id': productiveOrgId
+                        },
+                        timeout: 10000
+                    });
+                    if (productiveResponse.data && productiveResponse.data.data && productiveResponse.data.data.length > 0) {
+                        hasProductiveAccess = true;
+                        console.log('✅ Productive credentials verified');
+                    }
+                }
+                catch (productiveError) {
+                    console.log('⚠️ Productive verification failed:', productiveError.message);
+                    // Don't fail the whole auth process - JIRA is primary
+                }
+            }
             return {
-                displayName: response.data.displayName || response.data.name,
-                accountId: response.data.accountId
+                ...jiraResult,
+                hasProductiveAccess
             };
         }
         catch (error) {
@@ -121,6 +154,19 @@ class AuthenticationService {
         }
         const users = await this.getStoredUsers();
         return users.find(u => u.email === activeUser.email) || null;
+    }
+    /**
+     * Get credentials for specific user by email
+     */
+    async getUserCredentials(email) {
+        const users = await this.getStoredUsers();
+        return users.find(u => u.email === email) || null;
+    }
+    /**
+     * Get current user (alias for getActiveUser for consistency)
+     */
+    async getCurrentUser() {
+        return this.getActiveUser();
     }
     /**
      * Switch to a different user
