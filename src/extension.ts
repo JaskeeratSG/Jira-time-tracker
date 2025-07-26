@@ -51,7 +51,17 @@ export function activate(context: vscode.ExtensionContext) {
             CommandPanel.show(context, timeLogger);
         });
 
-        context.subscriptions.push(startTimer, stopTimer, resumeTimer, finishAndLog, showCommandPanel);
+        let testProductiveConnection = vscode.commands.registerCommand('jira-time-tracker.testProductiveConnection', async () => {
+            outputChannel.appendLine('Test Productive connection command executed');
+            await timeLogger.testProductiveConnection();
+        });
+
+        let showCurrentSettings = vscode.commands.registerCommand('jira-time-tracker.showCurrentSettings', () => {
+            outputChannel.appendLine('Show current settings command executed');
+            timeLogger.showCurrentSettings();
+        });
+
+        context.subscriptions.push(startTimer, stopTimer, resumeTimer, finishAndLog, showCommandPanel, testProductiveConnection, showCurrentSettings);
         context.subscriptions.push(outputChannel);
         
         outputChannel.appendLine('All commands registered successfully');

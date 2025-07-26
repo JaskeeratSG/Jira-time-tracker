@@ -93,7 +93,7 @@ class TimeTrackerSidebarProvider {
                             catch (error) {
                                 this._outputChannel.appendLine('Failed to load projects: ' + error.message);
                                 if (error.response) {
-                                    this._outputChannel.appendLine('JIRA API Response: ' + JSON.stringify(error.response.data, null, 2));
+                                    this._outputChannel.appendLine('JIRA API Error: ' + (error.response.data?.message || error.response.statusText || 'Unknown error'));
                                 }
                                 this._showNotification('Failed to load projects: ' + error.message, 'error');
                                 // Reset the button state
@@ -104,8 +104,11 @@ class TimeTrackerSidebarProvider {
                             break;
                         case 'loadIssues':
                             this._outputChannel.appendLine(`Loading issues for project: ${data.projectKey}`);
+                            // Set the current project for Productive integration
+                            this._timeLogger.setCurrentProject(data.projectKey);
+                            this._outputChannel.appendLine(`Set current project to: ${data.projectKey}`);
                             const issues = await this._timeLogger.jiraService.getProjectIssues(data.projectKey);
-                            this._outputChannel.appendLine(`Issues loaded for project ${data.projectKey}: ` + JSON.stringify(issues, null, 2));
+                            this._outputChannel.appendLine(`Issues loaded for project ${data.projectKey}: ${issues.length} issues found`);
                             this._view?.webview.postMessage({
                                 type: 'issues',
                                 issues: issues
@@ -113,7 +116,7 @@ class TimeTrackerSidebarProvider {
                             this._showNotification(`Issues loaded for project ${data.projectKey}`, 'info');
                             break;
                         case 'manualTimeLog':
-                            this._outputChannel.appendLine('Manual time log received: ' + JSON.stringify(data, null, 2));
+                            this._outputChannel.appendLine(`Manual time log: ${data.timeSpent} minutes for ${data.issueKey}`);
                             try {
                                 if (!data.issueKey || !data.timeSpent) {
                                     this._showNotification('Please select an issue and enter time', 'error');
@@ -143,7 +146,7 @@ class TimeTrackerSidebarProvider {
                             try {
                                 const branchInfo = await this._timeLogger.getBranchTicketInfo();
                                 if (branchInfo) {
-                                    this._outputChannel.appendLine('Branch info loaded: ' + JSON.stringify(branchInfo, null, 2));
+                                    this._outputChannel.appendLine(`Branch info: ${branchInfo.projectKey}/${branchInfo.issueKey}`);
                                     this._view?.webview.postMessage({
                                         type: 'branch-info',
                                         projectKey: branchInfo.projectKey,
@@ -165,20 +168,23 @@ class TimeTrackerSidebarProvider {
                             break;
                         case 'signIn':
                             try {
-                                this._outputChannel.appendLine('Processing sign in request...');
-                                const { email, apiToken, baseUrl } = data;
-                                if (!email || !apiToken || !baseUrl) {
+                                this._outputChannel.appendLine('Processing dual authentication request...');
+                                const { jiraEmail, jiraApiToken, jiraBaseUrl, productiveApiToken } = data;
+                                if (!jiraEmail || !jiraApiToken || !jiraBaseUrl || !productiveApiToken) {
                                     throw new Error('Please fill in all fields');
                                 }
+                                // Test both JIRA and Productive credentials
+                                this._outputChannel.appendLine('Testing JIRA credentials...');
                                 const authenticatedUser = await this._authService.authenticateUser({
-                                    email,
-                                    apiToken,
-                                    baseUrl
+                                    email: jiraEmail,
+                                    apiToken: jiraApiToken,
+                                    baseUrl: jiraBaseUrl,
+                                    productiveApiToken: productiveApiToken
                                 });
                                 // Update the JiraService with the new authentication service
                                 this._timeLogger.updateJiraService(this._authService);
                                 this._outputChannel.appendLine(`User signed in: ${authenticatedUser.email}`);
-                                this._showNotification(`Welcome ${authenticatedUser.displayName}!`, 'success');
+                                this._showNotification(`Welcome ${authenticatedUser.displayName}! Both JIRA and Productive connected.`, 'success');
                                 // Send authentication status to webview
                                 this._view?.webview.postMessage({
                                     type: 'authenticationStatus',

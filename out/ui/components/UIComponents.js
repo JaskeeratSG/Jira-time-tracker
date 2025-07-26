@@ -421,6 +421,15 @@ class StylesComponent extends BaseComponent {
                     text-decoration: underline;
                 }
                 
+                .auth-section-title {
+                    font-size: 12px;
+                    font-weight: 600;
+                    color: var(--vscode-foreground);
+                    margin-bottom: 8px;
+                    padding-bottom: 4px;
+                    border-bottom: 1px solid var(--vscode-input-border);
+                }
+                
                 .secondary-button {
                     padding: 6px 12px;
                     background: var(--vscode-button-secondaryBackground);
@@ -517,6 +526,31 @@ class StylesComponent extends BaseComponent {
                 .icon-button:hover {
                     background: var(--vscode-toolbar-hoverBackground);
                 }
+                
+                .service-section {
+                    margin-bottom: 16px;
+                    padding-bottom: 12px;
+                    border-bottom: 1px solid var(--vscode-input-border);
+                }
+                
+                .service-section:last-child {
+                    border-bottom: none;
+                    margin-bottom: 0;
+                }
+                
+                .service-title {
+                    font-size: 12px;
+                    font-weight: 600;
+                    color: var(--vscode-foreground);
+                    margin-bottom: 8px;
+                }
+                
+                .auth-note {
+                    font-size: 10px;
+                    color: var(--vscode-descriptionForeground);
+                    margin-top: 4px;
+                    display: block;
+                }
             </style>
         `;
     }
@@ -545,15 +579,28 @@ class AuthenticationSectionComponent extends BaseComponent {
 
                 <!-- Sign In Form -->
                 <div id="signInForm" class="sign-in-form">
-                    <input type="url" id="jiraUrlInput" class="auth-input" placeholder="JIRA URL (e.g., https://company.atlassian.net)" required>
-                    <input type="email" id="emailInput" class="auth-input" placeholder="Your JIRA email (auto-detecting from git...)" required>
-                    <input type="password" id="apiTokenInput" class="auth-input" placeholder="API Token" required>
+                    <div class="service-section">
+                        <div class="service-title">📋 JIRA Configuration</div>
+                        <input type="url" id="jiraUrlInput" class="auth-input" placeholder="JIRA URL (e.g., https://company.atlassian.net)" required>
+                        <input type="email" id="emailInput" class="auth-input" placeholder="Your JIRA email (auto-detecting from git...)" required>
+                        <input type="password" id="jiraApiTokenInput" class="auth-input" placeholder="JIRA API Token" required>
+                    </div>
+                    
+                    <div class="service-section">
+                        <div class="service-title">🛠️ Productive Configuration</div>
+                        <input type="password" id="productiveApiTokenInput" class="auth-input" placeholder="Productive API Token" required>
+                        <small class="auth-note">Organization ID and URL configured in .env file</small>
+                    </div>
+                    
                     <button id="signInBtn" class="auth-button" type="button">
                         <div class="loader"></div>
-                        <span>Sign In</span>
+                        <span>Sign In to Both Services</span>
                     </button>
                     <div class="auth-help">
-                        <small>Need an API token? <a href="#" onclick="window.openApiTokenHelp()">Get one here</a></small>
+                        <small>
+                            <a href="#" onclick="window.openJiraTokenHelp()">Get JIRA API token</a> | 
+                            <a href="#" onclick="window.openProductiveTokenHelp()">Get Productive API token</a>
+                        </small>
                     </div>
                 </div>
 
@@ -717,9 +764,10 @@ class JavaScriptComponent extends BaseComponent {
                         signInBtn.addEventListener('click', function() {
                             const jiraUrl = document.getElementById('jiraUrlInput').value.trim();
                             const email = document.getElementById('emailInput').value.trim();
-                            const apiToken = document.getElementById('apiTokenInput').value.trim();
+                            const jiraApiToken = document.getElementById('jiraApiTokenInput').value.trim();
+                            const productiveApiToken = document.getElementById('productiveApiTokenInput').value.trim();
                             
-                            if (!jiraUrl || !email || !apiToken) {
+                            if (!jiraUrl || !email || !jiraApiToken || !productiveApiToken) {
                                 showNotification('Please fill in all fields', 'error');
                                 return;
                             }
@@ -730,9 +778,10 @@ class JavaScriptComponent extends BaseComponent {
                             
                             vscode.postMessage({
                                 type: 'signIn',
-                                baseUrl: jiraUrl,
-                                email: email,
-                                apiToken: apiToken
+                                jiraBaseUrl: jiraUrl,
+                                jiraEmail: email,
+                                jiraApiToken: jiraApiToken,
+                                productiveApiToken: productiveApiToken
                             });
                         });
                     }
@@ -825,8 +874,13 @@ class JavaScriptComponent extends BaseComponent {
                     showNotification('Generate API token at: Your JIRA → Account Settings → Security → API tokens', 'info');
                 }
                 
+                function openProductiveTokenHelp() {
+                    showNotification('Generate API token at: Productive → Settings → API tokens → Personal access tokens', 'info');
+                }
+                
                 // Make functions available globally
                 window.openApiTokenHelp = openApiTokenHelp;
+                window.openProductiveTokenHelp = openProductiveTokenHelp;
                 window.startTimer = startTimer;
                 window.stopTimer = stopTimer;
                 window.resumeTimer = resumeTimer;
