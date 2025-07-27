@@ -1079,7 +1079,7 @@ class JavaScriptComponent extends BaseComponent {
                                     issueSelect.disabled = true;
                                 }
                                 
-                                showNotification(\`Loaded \${message.projects.length} projects\`, 'success');
+                                // Note: Backend already sends notification for projects loaded
                             }
                             
                             // Reset button state
@@ -1100,7 +1100,7 @@ class JavaScriptComponent extends BaseComponent {
                                 searchInput.focus(); // Focus the input for immediate typing
                             }
                             
-                            showNotification('✅ Project loaded! Type CTL-123 to search for issues.', 'success');
+                            // Note: Backend already sends notification for project loaded
                             break;
                         case 'searchResults':
                             console.log('Received search results:', message.issues);
@@ -1155,7 +1155,7 @@ class JavaScriptComponent extends BaseComponent {
                                     if (searchInput) {
                                         searchInput.value = message.issueKey;
                                         selectedIssueKey = message.issueKey;
-                                        showNotification('Issue auto-selected from branch: ' + message.issueKey, 'success');
+                                        // Note: Backend already sends notification for branch info
                                     }
                                 }, 1000);
                             }
