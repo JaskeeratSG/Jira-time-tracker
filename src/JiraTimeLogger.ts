@@ -186,7 +186,7 @@ export class JiraTimeLogger {
         if (!this.currentProject) return null;
 
         try {
-            const issues = await this.jiraService.getProjectIssues(this.currentProject);
+            const issues = await this.jiraService.getAllProjectIssuesUnfiltered(this.currentProject);
             const selected = await vscode.window.showQuickPick(
                 issues.map(issue => ({
                     label: issue.key,
@@ -546,13 +546,13 @@ export class JiraTimeLogger {
             // Step 1: Fetch all projects from Productive API
             this.log(`   📊 Fetching projects from Productive API...`);
             const projectsResponse = await axios.get(`${credentials.baseUrl}/projects?page[size]=100&page[number]=1`, {
-                headers: {
-                    'Content-Type': 'application/vnd.api+json',
-                    'X-Auth-Token': credentials.apiToken,
-                    'X-Organization-Id': credentials.organizationId
-                }
-            });
-            
+                        headers: {
+                            'Content-Type': 'application/vnd.api+json',
+                            'X-Auth-Token': credentials.apiToken,
+                            'X-Organization-Id': credentials.organizationId
+                        }
+                    });
+                    
             const projects = projectsResponse.data.data;
             this.log(`   📊 Found ${projects.length} projects in Productive`);
             
@@ -564,7 +564,7 @@ export class JiraTimeLogger {
                 
                 // Create mapping for full project name
                 projectMapping[projectName] = projectId;
-                
+            
                 // Create mapping for project key (first word or acronym)
                 const projectKey = projectName.split(' ')[0].toUpperCase();
                 if (projectKey.length > 1) {
@@ -602,13 +602,13 @@ export class JiraTimeLogger {
                 
                 // Method 2: Exact name match (case insensitive)
                 if (!targetProject) {
-                    targetProject = projects.find((p: any) => {
-                        const projectName = p.attributes.name.toLowerCase();
+                targetProject = projects.find((p: any) => {
+                    const projectName = p.attributes.name.toLowerCase();
                         const jiraProject = projectKey!.toLowerCase();
-                        return projectName === jiraProject;
-                    });
-                    
-                    if (targetProject) {
+                    return projectName === jiraProject;
+                });
+                
+                if (targetProject) {
                         this.log(`   ✅ Found exact name match: ${targetProject.attributes.name}`);
                     }
                 }
@@ -628,20 +628,20 @@ export class JiraTimeLogger {
                 
                 // Method 4: Word-based matching
                 if (!targetProject) {
-                    targetProject = projects.find((p: any) => {
-                        const projectName = p.attributes.name.toLowerCase();
+                        targetProject = projects.find((p: any) => {
+                            const projectName = p.attributes.name.toLowerCase();
                         const jiraProjectWords = projectKey!.toLowerCase().split(/[-_\s]+/);
-                        const productiveProjectWords = projectName.split(/[-_\s]+/);
+                            const productiveProjectWords = projectName.split(/[-_\s]+/);
+                            
+                            return jiraProjectWords.some(jiraWord => 
+                                jiraWord.length > 1 && productiveProjectWords.some((prodWord: string) => 
+                                    prodWord.includes(jiraWord) || jiraWord.includes(prodWord)
+                                )
+                            );
+                        });
                         
-                        return jiraProjectWords.some(jiraWord => 
-                            jiraWord.length > 1 && productiveProjectWords.some((prodWord: string) => 
-                                prodWord.includes(jiraWord) || jiraWord.includes(prodWord)
-                            )
-                        );
-                    });
-                    
-                    if (targetProject) {
-                        this.log(`   ✅ Found word-based match: ${targetProject.attributes.name}`);
+                        if (targetProject) {
+                            this.log(`   ✅ Found word-based match: ${targetProject.attributes.name}`);
                     }
                 }
             }

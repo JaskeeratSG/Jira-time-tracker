@@ -164,7 +164,7 @@ class JiraTimeLogger {
         if (!this.currentProject)
             return null;
         try {
-            const issues = await this.jiraService.getProjectIssues(this.currentProject);
+            const issues = await this.jiraService.getAllProjectIssuesUnfiltered(this.currentProject);
             const selected = await vscode.window.showQuickPick(issues.map(issue => ({
                 label: issue.key,
                 description: issue.summary

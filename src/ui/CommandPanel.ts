@@ -54,13 +54,13 @@ export class CommandPanel {
                         break;
                     case 'loadProjectIssues':
                         try {
-                            const issues = await this._timeLogger.jiraService.getProjectIssues(message.projectKey);
+                            // For smart search, we don't need to load all issues initially
                             this._panel.webview.postMessage({
                                 type: 'issues-update',
-                                issues
+                                issues: []
                             });
                         } catch (error) {
-                            vscode.window.showErrorMessage(`Failed to load issues: ${error}`);
+                            vscode.window.showErrorMessage(`Failed to load project: ${error}`);
                         }
                         break;
                 }

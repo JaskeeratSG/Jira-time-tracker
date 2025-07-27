@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.JiraService = void 0;
 const axios_1 = require("axios");
 const settings_1 = require("../config/settings");
+const SearchService_1 = require("./SearchService");
 class JiraService {
     constructor(authService) {
         this.authService = null;
@@ -121,19 +122,218 @@ class JiraService {
             throw new Error('Failed to fetch projects from JIRA');
         }
     }
-    async getProjectIssues(projectKey) {
+    async getProjectIssues(projectKey, maxResults = 50) {
         const credentials = await this.getCurrentCredentials();
         try {
-            const jql = `project = "${projectKey}" AND issuetype in (Bug, Story, Task) ORDER BY created DESC`;
-            const response = await this._makeRequest(`/rest/api/2/search?jql=${encodeURIComponent(jql)}`, credentials);
-            return response.issues.map((issue) => ({
-                key: issue.key,
-                summary: issue.fields.summary
-            }));
+            const jql = `project = "${projectKey}" AND issuetype in (Bug, Story, Task, Sub-task, Epic, Improvement, New Feature, Technical task, Research, Documentation, Design, Testing) ORDER BY created DESC`;
+            const response = await this._makeRequest(`/rest/api/2/search?jql=${encodeURIComponent(jql)}&maxResults=${maxResults}&fields=summary,issuetype,parent`, credentials);
+            return response.issues.map((issue) => {
+                let summary = issue.fields.summary;
+                // Add parent information for subtasks
+                if (issue.fields.issuetype && issue.fields.issuetype.name === 'Sub-task' && issue.fields.parent) {
+                    summary = `${summary} (Parent: ${issue.fields.parent.key})`;
+                }
+                return {
+                    key: issue.key,
+                    summary: summary
+                };
+            });
         }
         catch (error) {
             console.error('Failed to fetch project issues:', error);
             throw new Error(`Failed to fetch issues for project ${projectKey}`);
+        }
+    }
+    async getAllProjectIssues(projectKey) {
+        const credentials = await this.getCurrentCredentials();
+        const allIssues = [];
+        let startAt = 0;
+        const maxResults = 100; // Jira's maximum per request
+        let hasMore = true;
+        try {
+            while (hasMore) {
+                const jql = `project = "${projectKey}" AND issuetype in (Bug, Story, Task, Sub-task, Epic, Improvement, New Feature, Technical task, Research, Documentation, Design, Testing) ORDER BY created DESC`;
+                const response = await this._makeRequest(`/rest/api/2/search?jql=${encodeURIComponent(jql)}&maxResults=${maxResults}&startAt=${startAt}&fields=summary,issuetype,parent`, credentials);
+                const issues = response.issues.map((issue) => {
+                    let summary = issue.fields.summary;
+                    // Add parent information for subtasks
+                    if (issue.fields.issuetype && issue.fields.issuetype.name === 'Sub-task' && issue.fields.parent) {
+                        summary = `${summary} (Parent: ${issue.fields.parent.key})`;
+                    }
+                    return {
+                        key: issue.key,
+                        summary: summary
+                    };
+                });
+                allIssues.push(...issues);
+                // Check if there are more issues to fetch
+                hasMore = response.issues.length === maxResults;
+                startAt += maxResults;
+            }
+            return allIssues;
+        }
+        catch (error) {
+            console.error('Failed to fetch all project issues:', error);
+            throw new Error(`Failed to fetch all issues for project ${projectKey}`);
+        }
+    }
+    async searchIssues(projectKey, searchTerm) {
+        const credentials = await this.getCurrentCredentials();
+        const maxResults = 100; // Increased for better search coverage
+        try {
+            // If search term is empty, return recent issues
+            if (!searchTerm || searchTerm.trim() === '') {
+                const jql = `project = "${projectKey}" ORDER BY updated DESC`;
+                const response = await this._makeRequest(`/rest/api/2/search?jql=${encodeURIComponent(jql)}&maxResults=${maxResults}&fields=summary,issuetype,parent`, credentials);
+                const issues = response.issues.map((issue) => {
+                    let summary = issue.fields.summary;
+                    // Add parent information for subtasks
+                    if (issue.fields.issuetype && issue.fields.issuetype.name === 'Sub-task' && issue.fields.parent) {
+                        summary = `${summary} (Parent: ${issue.fields.parent.key})`;
+                    }
+                    return {
+                        key: issue.key,
+                        summary: summary
+                    };
+                });
+                console.log(`Recent issues: ${issues.length} issues found for project ${projectKey}`);
+                return issues;
+            }
+            // For search terms, use a broader JQL query to get more candidates
+            const jql = `project = "${projectKey}" ORDER BY updated DESC`;
+            const response = await this._makeRequest(`/rest/api/2/search?jql=${encodeURIComponent(jql)}&maxResults=${maxResults}&fields=summary,issuetype,parent`, credentials);
+            const allIssues = response.issues.map((issue) => {
+                let summary = issue.fields.summary;
+                // Add parent information for subtasks
+                if (issue.fields.issuetype && issue.fields.issuetype.name === 'Sub-task' && issue.fields.parent) {
+                    summary = `${summary} (Parent: ${issue.fields.parent.key})`;
+                }
+                return {
+                    key: issue.key,
+                    summary: summary
+                };
+            });
+            // Use SearchService for client-side filtering
+            const searchService = new SearchService_1.SearchService();
+            const searchResults = searchService.searchIssues(allIssues, searchTerm);
+            // Convert SearchResult back to simple format
+            const filteredIssues = searchResults.map((result) => ({
+                key: result.key,
+                summary: result.summary
+            }));
+            console.log(`Search results: ${filteredIssues.length} issues found for term "${searchTerm}" in project ${projectKey}`);
+            return filteredIssues;
+        }
+        catch (error) {
+            console.error('Failed to search issues:', error);
+            throw new Error(`Failed to search issues for project ${projectKey}`);
+        }
+    }
+    async getAllProjectIssuesUnfiltered(projectKey) {
+        const credentials = await this.getCurrentCredentials();
+        const allIssues = [];
+        let startAt = 0;
+        const maxResults = 100; // Jira's maximum per request
+        let hasMore = true;
+        try {
+            while (hasMore) {
+                // No issuetype filter - get ALL issue types
+                const jql = `project = "${projectKey}" ORDER BY created DESC`;
+                const response = await this._makeRequest(`/rest/api/2/search?jql=${encodeURIComponent(jql)}&maxResults=${maxResults}&startAt=${startAt}&fields=summary,issuetype,parent`, credentials);
+                const issues = response.issues.map((issue) => {
+                    let summary = issue.fields.summary;
+                    // Add parent information for subtasks
+                    if (issue.fields.issuetype && issue.fields.issuetype.name === 'Sub-task' && issue.fields.parent) {
+                        summary = `${summary} (Parent: ${issue.fields.parent.key})`;
+                    }
+                    return {
+                        key: issue.key,
+                        summary: summary
+                    };
+                });
+                allIssues.push(...issues);
+                // Check if there are more issues to fetch
+                hasMore = response.issues.length === maxResults;
+                startAt += maxResults;
+            }
+            console.log(`Loaded ${allIssues.length} total issues for project ${projectKey}`);
+            return allIssues;
+        }
+        catch (error) {
+            console.error('Failed to fetch all project issues (unfiltered):', error);
+            throw new Error(`Failed to fetch all issues for project ${projectKey}`);
+        }
+    }
+    async getProjectIssuesPaginated(projectKey, page = 1, pageSize = 5) {
+        const credentials = await this.getCurrentCredentials();
+        const startAt = (page - 1) * pageSize;
+        try {
+            // First get total count
+            const countJql = `project = "${projectKey}" ORDER BY created DESC`;
+            const countResponse = await this._makeRequest(`/rest/api/2/search?jql=${encodeURIComponent(countJql)}&maxResults=1&fields=key`, credentials);
+            const total = countResponse.total;
+            // Then get paginated results
+            const jql = `project = "${projectKey}" ORDER BY created DESC`;
+            const response = await this._makeRequest(`/rest/api/2/search?jql=${encodeURIComponent(jql)}&maxResults=${pageSize}&startAt=${startAt}&fields=summary,issuetype,parent`, credentials);
+            const issues = response.issues.map((issue) => {
+                let summary = issue.fields.summary;
+                // Add parent information for subtasks
+                if (issue.fields.issuetype && issue.fields.issuetype.name === 'Sub-task' && issue.fields.parent) {
+                    summary = `${summary} (Parent: ${issue.fields.parent.key})`;
+                }
+                return {
+                    key: issue.key,
+                    summary: summary
+                };
+            });
+            const hasMore = startAt + pageSize < total;
+            return {
+                issues,
+                total,
+                page,
+                pageSize,
+                hasMore
+            };
+        }
+        catch (error) {
+            console.error('Failed to fetch paginated project issues:', error);
+            throw new Error(`Failed to fetch paginated issues for project ${projectKey}`);
+        }
+    }
+    async getProjectIssuesUnfilteredPaginated(projectKey, page = 1, pageSize = 5) {
+        const credentials = await this.getCurrentCredentials();
+        const startAt = (page - 1) * pageSize;
+        try {
+            // First get total count
+            const countJql = `project = "${projectKey}" ORDER BY created DESC`;
+            const countResponse = await this._makeRequest(`/rest/api/2/search?jql=${encodeURIComponent(countJql)}&maxResults=1&fields=key`, credentials);
+            const total = countResponse.total;
+            // Then get paginated results
+            const jql = `project = "${projectKey}" ORDER BY created DESC`;
+            const response = await this._makeRequest(`/rest/api/2/search?jql=${encodeURIComponent(jql)}&maxResults=${pageSize}&startAt=${startAt}&fields=summary,issuetype,parent`, credentials);
+            const issues = response.issues.map((issue) => {
+                let summary = issue.fields.summary;
+                // Add parent information for subtasks
+                if (issue.fields.issuetype && issue.fields.issuetype.name === 'Sub-task' && issue.fields.parent) {
+                    summary = `${summary} (Parent: ${issue.fields.parent.key})`;
+                }
+                return {
+                    key: issue.key,
+                    summary: summary
+                };
+            });
+            const hasMore = startAt + pageSize < total;
+            return {
+                issues,
+                total,
+                page,
+                pageSize,
+                hasMore
+            };
+        }
+        catch (error) {
+            console.error('Failed to fetch paginated project issues (unfiltered):', error);
+            throw new Error(`Failed to fetch paginated issues for project ${projectKey}`);
         }
     }
     async getProjectsByUserEmail(email) {

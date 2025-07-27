@@ -557,6 +557,123 @@ export class StylesComponent extends BaseComponent {
                     margin-top: 4px;
                     display: block;
                 }
+                
+                /* Pagination Controls */
+                .pagination-controls {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 8px;
+                    margin-top: 8px;
+                    padding: 8px;
+                    background: var(--vscode-input-background);
+                    border-radius: 4px;
+                    border: 1px solid var(--vscode-input-border);
+                }
+                
+                .pagination-btn {
+                    padding: 4px 8px;
+                    background: var(--vscode-button-background);
+                    color: var(--vscode-button-foreground);
+                    border: 1px solid var(--vscode-button-border);
+                    border-radius: 3px;
+                    cursor: pointer;
+                    font-size: 11px;
+                    transition: all 0.2s ease;
+                }
+                
+                .pagination-btn:hover:not(:disabled) {
+                    background: var(--vscode-button-hoverBackground);
+                }
+                
+                .pagination-btn:disabled {
+                    opacity: 0.5;
+                    cursor: not-allowed;
+                }
+                
+                .page-info {
+                    font-size: 11px;
+                    color: var(--vscode-descriptionForeground);
+                    min-width: 80px;
+                    text-align: center;
+                }
+                
+                /* Smart Search Styles */
+                .smart-search-container {
+                    position: relative;
+                    margin-bottom: 8px;
+                }
+                
+                .smart-search-input {
+                    width: 100%;
+                    padding: 8px 12px;
+                    border: 1px solid var(--vscode-input-border);
+                    border-radius: 4px;
+                    background: var(--vscode-input-background);
+                    color: var(--vscode-input-foreground);
+                    font-size: 13px;
+                    box-sizing: border-box;
+                    transition: border-color 0.2s ease;
+                }
+                
+                .smart-search-input:focus {
+                    outline: none;
+                    border-color: var(--vscode-focusBorder);
+                }
+                
+                .smart-search-input:disabled {
+                    opacity: 0.6;
+                    cursor: not-allowed;
+                }
+                
+                .search-results {
+                    position: absolute;
+                    top: 100%;
+                    left: 0;
+                    right: 0;
+                    background: var(--vscode-dropdown-background);
+                    border: 1px solid var(--vscode-input-border);
+                    border-radius: 4px;
+                    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+                    z-index: 1000;
+                    max-height: 300px;
+                    overflow: hidden;
+                }
+                
+                .search-results-list {
+                    max-height: 250px;
+                    overflow-y: auto;
+                }
+                
+                .search-result-item {
+                    padding: 8px 12px;
+                    cursor: pointer;
+                    font-size: 12px;
+                    border-bottom: 1px solid var(--vscode-input-border);
+                    transition: background-color 0.2s ease;
+                }
+                
+                .search-result-item:hover {
+                    background: var(--vscode-list-hoverBackground);
+                }
+                
+                .search-result-item.selected {
+                    background: var(--vscode-list-activeSelectionBackground);
+                    color: var(--vscode-list-activeSelectionForeground);
+                }
+                
+                .no-results-message {
+                    padding: 12px;
+                    text-align: center;
+                    color: var(--vscode-descriptionForeground);
+                    font-size: 12px;
+                }
+                
+                .search-highlight {
+                    background: var(--vscode-textPreformat-background);
+                    padding: 1px 2px;
+                    border-radius: 2px;
+                }
             </style>
         `;
     }
@@ -669,9 +786,13 @@ export class ProjectIssueSelectionComponent extends BaseComponent {
                 <select id="projectSelect" class="dropdown-select" onchange="onProjectChange()" disabled>
                     <option value="">Select Project</option>
                 </select>
-                <select id="issueSelect" class="dropdown-select" disabled>
-                    <option value="">Select Issue</option>
-                </select>
+                                 <div class="smart-search-container">
+                    <input type="text" id="issueSearchInput" class="smart-search-input" placeholder="Search by issue key (PROJECT-1234) or summary text..." disabled>
+                    <div id="searchResults" class="search-results" style="display: none;">
+                        <div id="searchResultsList" class="search-results-list"></div>
+                    </div>
+                </div>
+                                 <!-- Pagination controls removed for smart search - not needed -->
                 <button class="submit-button" onclick="clearAll()">
                     <span>Clear All</span>
                 </button>
@@ -984,18 +1105,27 @@ export class JavaScriptComponent extends BaseComponent {
                             break;
                         case 'issues':
                             console.log('Received issues:', message.issues);
-                            const issueSelect = document.getElementById('issueSelect');
-                            if (issueSelect) {
-                                issueSelect.innerHTML = '<option value="">Select Issue</option>';
-                                message.issues.forEach(issue => {
-                                    const option = document.createElement('option');
-                                    option.value = issue.key;
-                                    option.textContent = \`\${issue.summary} (\${issue.key})\`;
-                                    issueSelect.appendChild(option);
-                                });
-                                issueSelect.disabled = false;
-                                
-                                showNotification(\`Loaded \${message.issues.length} issues\`, 'success');
+                            
+                            // Enable smart search input when issues are loaded
+                            const searchInput = document.getElementById('issueSearchInput');
+                            
+                            if (searchInput) {
+                                searchInput.disabled = false;
+                                searchInput.focus(); // Focus the input for immediate typing
+                            }
+                            
+                            showNotification('✅ Project loaded! Type CTL-123 to search for issues.', 'success');
+                            break;
+                        case 'searchResults':
+                            console.log('Received search results:', message.issues);
+                            console.log('Search term:', message.searchTerm);
+                            
+                            if (message.error) {
+                                console.error('Search error:', message.error);
+                                showNotification('Search failed: ' + message.error, 'error');
+                                showNoResultsMessage('Search failed');
+                            } else {
+                                showSearchResults(message.issues, message.searchTerm);
                             }
                             break;
                         case 'load-failed':
@@ -1021,7 +1151,6 @@ export class JavaScriptComponent extends BaseComponent {
                         case 'branch-info':
                             console.log('Received branch info:', message);
                             const projectSelect2 = document.getElementById('projectSelect');
-                            const issueSelect2 = document.getElementById('issueSelect');
                             
                             if (projectSelect2 && message.projectKey) {
                                 // Set project if it exists in dropdown
@@ -1033,14 +1162,16 @@ export class JavaScriptComponent extends BaseComponent {
                                 }
                             }
                             
-                            // Set issue after a short delay to allow issues to load
-                            if (issueSelect2 && message.issueKey) {
+                            // Set issue in smart search after a short delay to allow issues to load
+                            if (message.issueKey) {
                                 setTimeout(() => {
-                                    const issueOption = issueSelect2.querySelector(\`option[value="\${message.issueKey}"]\`);
-                                    if (issueOption) {
-                                        issueSelect2.value = message.issueKey;
+                                    const searchInput = document.getElementById('issueSearchInput');
+                                    if (searchInput) {
+                                        searchInput.value = message.issueKey;
+                                        selectedIssueKey = message.issueKey;
+                                        showNotification('Issue auto-selected from branch: ' + message.issueKey, 'success');
                                     }
-                                }, 500);
+                                }, 1000);
                             }
                             break;
                         case 'git-email':
@@ -1075,17 +1206,14 @@ export class JavaScriptComponent extends BaseComponent {
                         return;
                     }
                     
-                    const issueSelect = document.getElementById('issueSelect');
-                    const issueKey = issueSelect ? issueSelect.value : '';
-                    
-                    if (!issueKey) {
-                        showNotification('Please select an issue first', 'error');
+                    if (!selectedIssueKey) {
+                        showNotification('Please search and select an issue first', 'error');
                         return;
                     }
                     
                     vscode.postMessage({ 
                         type: 'startTimer',
-                        issueKey: issueKey
+                        issueKey: selectedIssueKey
                     });
                 }
 
@@ -1127,18 +1255,38 @@ export class JavaScriptComponent extends BaseComponent {
                     const projectSelect = document.getElementById('projectSelect');
                     const projectKey = projectSelect ? projectSelect.value : '';
                     
+                    // Update current project key for smart search
+                    currentProjectKey = projectKey;
+                    
                     if (projectKey) {
+                        // Reset smart search when changing projects
+                        
+                        // Disable smart search until issues are loaded
+                        const searchInput = document.getElementById('issueSearchInput');
+                        
+                        if (searchInput) {
+                            searchInput.disabled = true;
+                            searchInput.value = '';
+                        }
+                        
+                        // Hide any existing search results
+                        hideSearchResults();
+                        
                         vscode.postMessage({
                             type: 'loadIssues',
                             projectKey: projectKey
                         });
                     } else {
-                        // Reset issues dropdown
-                        const issueSelect = document.getElementById('issueSelect');
-                        if (issueSelect) {
-                            issueSelect.innerHTML = '<option value="">Select Issue</option>';
-                            issueSelect.disabled = true;
+                        // Reset smart search
+                        const searchInput = document.getElementById('issueSearchInput');
+                        
+                        if (searchInput) {
+                            searchInput.disabled = true;
+                            searchInput.value = '';
                         }
+                        
+                        // Hide search results
+                        hideSearchResults();
                     }
                 }
 
@@ -1149,14 +1297,11 @@ export class JavaScriptComponent extends BaseComponent {
                         return;
                     }
                     
-                    const issueSelect = document.getElementById('issueSelect');
                     const timeInput = document.getElementById('manualTimeInput');
-                    
-                    const issueKey = issueSelect ? issueSelect.value : '';
                     const timeSpent = timeInput ? timeInput.value.trim() : '';
                     
-                    if (!issueKey) {
-                        showNotification('Please select an issue first', 'error');
+                    if (!selectedIssueKey) {
+                        showNotification('Please search and select an issue first', 'error');
                         return;
                     }
                     
@@ -1174,7 +1319,7 @@ export class JavaScriptComponent extends BaseComponent {
                     
                     vscode.postMessage({
                         type: 'manualTimeLog',
-                        issueKey: issueKey,
+                        issueKey: selectedIssueKey,
                         timeSpent: timeSpent
                     });
                 }
@@ -1203,6 +1348,194 @@ export class JavaScriptComponent extends BaseComponent {
                     vscode.postMessage({ type: 'loadBranchInfo' });
                 }
 
+                // Smart search variables
+                let selectedIssueKey = '';
+                let searchTimeout = null;
+                let currentProjectKey = '';
+
+
+
+                // Smart Search Functions
+                function initializeSmartSearch() {
+                    const searchInput = document.getElementById('issueSearchInput');
+                    
+                    if (searchInput) {
+                        searchInput.addEventListener('input', onSmartSearchInput);
+                        searchInput.addEventListener('keydown', onSearchKeyDown);
+                        console.log('Smart search initialized');
+                    }
+                }
+
+                function onSmartSearchInput() {
+                    const searchInput = document.getElementById('issueSearchInput');
+                    const searchTerm = searchInput ? searchInput.value.trim() : '';
+                    
+                    console.log('Smart search input:', searchTerm);
+                    
+                    // Clear previous timeout
+                    if (searchTimeout) {
+                        clearTimeout(searchTimeout);
+                    }
+                    
+                    // Hide results if search is empty
+                    if (searchTerm === '') {
+                        hideSearchResults();
+                        return;
+                    }
+                    
+                    // Show searching indicator for any non-empty search
+                    showNoResultsMessage('🔍 Searching...');
+                    
+                    // Debounce search requests (300ms delay)
+                    searchTimeout = setTimeout(() => {
+                        performSearch(searchTerm);
+                    }, 300);
+                }
+                
+                function performSearch(searchTerm) {
+                    if (!currentProjectKey) {
+                        showNoResultsMessage('❌ Please select a project first');
+                        return;
+                    }
+                    
+                    console.log('Sending search request for:', searchTerm);
+                    vscode.postMessage({
+                        type: 'searchIssues',
+                        projectKey: currentProjectKey,
+                        searchTerm: searchTerm
+                    });
+                }
+
+                function onSearchKeyDown(event) {
+                    const searchResults = document.getElementById('searchResults');
+                    const resultItems = searchResults ? searchResults.querySelectorAll('.search-result-item') : [];
+                    const selectedItem = searchResults ? searchResults.querySelector('.search-result-item.selected') : null;
+                    
+                    switch (event.key) {
+                        case 'ArrowDown':
+                            event.preventDefault();
+                            navigateSearchResults(1, resultItems, selectedItem);
+                            break;
+                        case 'ArrowUp':
+                            event.preventDefault();
+                            navigateSearchResults(-1, resultItems, selectedItem);
+                            break;
+                        case 'Enter':
+                            event.preventDefault();
+                            if (selectedItem) {
+                                selectSearchResult(selectedItem);
+                            }
+                            break;
+                        case 'Escape':
+                            event.preventDefault();
+                            hideSearchResults();
+                            break;
+                    }
+                }
+
+                function navigateSearchResults(direction, resultItems, selectedItem) {
+                    if (resultItems.length === 0) return;
+                    
+                    let nextIndex = 0;
+                    if (selectedItem) {
+                        const currentIndex = Array.from(resultItems).indexOf(selectedItem);
+                        nextIndex = (currentIndex + direction + resultItems.length) % resultItems.length;
+                    }
+                    
+                    // Remove previous selection
+                    resultItems.forEach(item => item.classList.remove('selected'));
+                    
+                    // Add new selection
+                    resultItems[nextIndex].classList.add('selected');
+                    resultItems[nextIndex].scrollIntoView({ block: 'nearest' });
+                }
+
+                function selectSearchResult(resultItem) {
+                    const issueKey = resultItem.getAttribute('data-key');
+                    const issueSummary = resultItem.getAttribute('data-summary');
+                    
+                    if (issueKey && issueSummary) {
+                        selectedIssueKey = issueKey;
+                        
+                        // Update search input with selected issue
+                        const searchInput = document.getElementById('issueSearchInput');
+                        if (searchInput) {
+                            searchInput.value = issueKey;
+                        }
+                        
+                        console.log('Selected issue:', issueKey, issueSummary);
+                        showNotification('Selected: ' + issueKey, 'success');
+                        
+                        // Hide search results
+                        hideSearchResults();
+                    }
+                }
+
+                function showSearchResults(issues, searchTerm) {
+                    const searchResults = document.getElementById('searchResults');
+                    const searchResultsList = document.getElementById('searchResultsList');
+                    
+                    if (!searchResults || !searchResultsList) return;
+                    
+                    if (issues.length === 0) {
+                        showNoResultsMessage('No issues found');
+                        return;
+                    }
+                    
+                    searchResultsList.innerHTML = '';
+                    issues.forEach(issue => {
+                        const resultItem = document.createElement('div');
+                        resultItem.className = 'search-result-item';
+                        resultItem.setAttribute('data-key', issue.key);
+                        resultItem.setAttribute('data-summary', issue.summary);
+                        resultItem.onclick = () => selectSearchResult(resultItem);
+                        
+                        // Highlight the search term
+                        let displayText = issue.summary + ' (' + issue.key + ')';
+                        if (searchTerm) {
+                            displayText = highlightSearchTerm(displayText, searchTerm);
+                        }
+                        
+                        resultItem.innerHTML = displayText;
+                        searchResultsList.appendChild(resultItem);
+                    });
+                    
+                    searchResults.style.display = 'block';
+                }
+
+                function showNoResultsMessage(message) {
+                    const searchResults = document.getElementById('searchResults');
+                    const searchResultsList = document.getElementById('searchResultsList');
+                    
+                    if (searchResults && searchResultsList) {
+                        searchResultsList.innerHTML = '<div class="no-results-message">' + message + '</div>';
+                        searchResults.style.display = 'block';
+                    }
+                }
+
+                function hideSearchResults() {
+                    const searchResults = document.getElementById('searchResults');
+                    if (searchResults) {
+                        searchResults.style.display = 'none';
+                    }
+                }
+
+                function highlightSearchTerm(text, searchTerm) {
+                    if (!searchTerm) return text;
+                    
+                    const lowerText = text.toLowerCase();
+                    const lowerSearch = searchTerm.toLowerCase();
+                    const index = lowerText.indexOf(lowerSearch);
+                    
+                    if (index === -1) return text;
+                    
+                    const before = text.substring(0, index);
+                    const match = text.substring(index, index + searchTerm.length);
+                    const after = text.substring(index + searchTerm.length);
+                    
+                    return before + '<span class="search-highlight">' + match + '</span>' + after;
+                }
+
                 // Initialize everything
                 updateButtonStates();
 
@@ -1210,6 +1543,7 @@ export class JavaScriptComponent extends BaseComponent {
                     setupAuthenticationHandlers();
                     checkAuthenticationStatus();
                     loadGitEmail();
+                    initializeSmartSearch();
                     
                     // Update legacy load projects button to work with authentication
                     const loadProjectsBtn = document.getElementById('loadProjectsBtn');

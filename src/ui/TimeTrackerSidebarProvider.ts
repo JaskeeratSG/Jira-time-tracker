@@ -138,13 +138,37 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
                             this._timeLogger.setCurrentProject(data.projectKey);
                             this._outputChannel.appendLine(`Set current project to: ${data.projectKey}`);
                             
-                            const issues = await this._timeLogger.jiraService.getProjectIssues(data.projectKey);
-                            this._outputChannel.appendLine(`Issues loaded for project ${data.projectKey}: ${issues.length} issues found`);
+                            // For smart search, we don't need to load all issues initially
+                            // Just send an empty issues array to enable the search input
+                            this._outputChannel.appendLine(`Project ${data.projectKey} ready for smart search`);
+                            
                             this._view?.webview.postMessage({
                                 type: 'issues',
-                                issues: issues
+                                issues: []
                             });
-                            this._showNotification(`Issues loaded for project ${data.projectKey}`, 'info');
+                            
+                            this._showNotification(`Project ${data.projectKey} loaded. Use smart search to find issues.`, 'info');
+                            break;
+                        case 'searchIssues':
+                            this._outputChannel.appendLine(`Searching issues for project: ${data.projectKey}, term: "${data.searchTerm}"`);
+                            
+                            try {
+                                const searchResults = await this._timeLogger.jiraService.searchIssues(data.projectKey, data.searchTerm);
+                                this._outputChannel.appendLine(`Search results: ${searchResults.length} issues found`);
+                                this._view?.webview.postMessage({
+                                    type: 'searchResults',
+                                    issues: searchResults,
+                                    searchTerm: data.searchTerm
+                                });
+                            } catch (error: any) {
+                                this._outputChannel.appendLine(`Search failed: ${error.message}`);
+                                this._view?.webview.postMessage({
+                                    type: 'searchResults',
+                                    issues: [],
+                                    searchTerm: data.searchTerm,
+                                    error: error.message
+                                });
+                            }
                             break;
                         case 'manualTimeLog':
                                                             this._outputChannel.appendLine(`Manual time log: ${data.timeSpent} minutes for ${data.issueKey}`);
@@ -368,11 +392,17 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
 
                     // Then load issues for the project
                     this._outputChannel.appendLine(`Loading issues for project ${branchInfo.projectKey}...`);
-                    const issues = await this._timeLogger.jiraService.getProjectIssues(branchInfo.projectKey);
-                    this._outputChannel.appendLine(`Issues loaded for project ${branchInfo.projectKey}: ` + JSON.stringify(issues, null, 2));
+                    const paginatedResult = await this._timeLogger.jiraService.getProjectIssuesUnfilteredPaginated(branchInfo.projectKey, 1, 5);
+                    this._outputChannel.appendLine(`Issues loaded for project ${branchInfo.projectKey}: ${paginatedResult.issues.length} issues (page 1 of ${Math.ceil(paginatedResult.total / 5)})`);
                     this._view?.webview.postMessage({
                         type: 'issues',
-                        issues: issues
+                        issues: paginatedResult.issues,
+                        pagination: {
+                            total: paginatedResult.total,
+                            page: paginatedResult.page,
+                            pageSize: paginatedResult.pageSize,
+                            hasMore: paginatedResult.hasMore
+                        }
                     });
 
                     // Finally set the selected values
