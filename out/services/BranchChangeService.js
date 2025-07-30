@@ -28,6 +28,10 @@ class BranchChangeService {
         this.gitService.onBranchChange(async (event) => {
             await this.handleBranchChange(event);
         });
+        // Set up commit monitoring
+        this.gitService.onCommitChange(async (event) => {
+            await this.handleCommit(event);
+        });
     }
     async handleBranchChange(event) {
         this.outputChannel.appendLine(`🔄 Processing branch change: ${event.oldBranch} → ${event.newBranch}`);
@@ -94,6 +98,9 @@ class BranchChangeService {
                 return;
             }
             this.outputChannel.appendLine(`⏰ Auto-starting timer for ticket: ${ticketInfo.ticketId}`);
+            // Set the current issue before starting the timer
+            this.timeLogger.setCurrentIssue(ticketInfo.ticketId);
+            this.timeLogger.setCurrentProject(ticketInfo.projectKey);
             await this.timeLogger.startTimer();
             this.outputChannel.appendLine('✅ Timer started automatically');
         }
@@ -117,7 +124,7 @@ class BranchChangeService {
             this.outputChannel.appendLine(`❌ Error in initial branch check: ${error}`);
         }
     }
-    async handleCommit(commitMessage) {
+    async handleCommit(event) {
         if (!this.autoTimerState.autoLog) {
             this.outputChannel.appendLine('📝 Auto-logging disabled, skipping commit log');
             return;
@@ -127,20 +134,27 @@ class BranchChangeService {
             return;
         }
         try {
-            const currentBranchInfo = this.gitService.getCurrentBranchInfo();
-            if (!currentBranchInfo) {
-                this.outputChannel.appendLine('❌ No current branch info available');
-                return;
-            }
-            const ticketInfo = await this.findLinkedTicketForBranch(currentBranchInfo.branch, currentBranchInfo.path);
+            this.outputChannel.appendLine(`📝 Processing commit from repository: ${event.workspacePath}`);
+            this.outputChannel.appendLine(`📝 Commit message: ${event.commitMessage}`);
+            this.outputChannel.appendLine(`📝 Branch: ${event.branch}`);
+            // Use the branch from the commit event instead of getting current branch info
+            const ticketInfo = await this.findLinkedTicketForBranch(event.branch, event.workspacePath);
             if (!ticketInfo) {
-                this.outputChannel.appendLine('❌ No linked ticket found for current branch');
+                this.outputChannel.appendLine('❌ No linked ticket found for commit branch');
                 return;
             }
-            this.outputChannel.appendLine(`📝 Logging time for commit: ${commitMessage}`);
+            this.outputChannel.appendLine(`📝 Logging time for commit: ${event.commitMessage}`);
+            this.outputChannel.appendLine(`📝 Ticket: ${ticketInfo.ticketId} (${ticketInfo.projectKey})`);
+            // Get the elapsed time in minutes for logging
+            const elapsedMinutes = this.timeLogger.getElapsedMinutes();
+            this.outputChannel.appendLine(`📝 Elapsed time: ${elapsedMinutes} minutes`);
             // Log time using the commit message as description
-            await this.timeLogger.logTime(ticketInfo.ticketId, this.timeLogger.getCurrentTime(), commitMessage);
+            await this.timeLogger.logTime(ticketInfo.ticketId, elapsedMinutes, event.commitMessage);
             this.outputChannel.appendLine('✅ Time logged successfully for commit');
+            // Reset the timer after successful logging
+            this.timeLogger.stopTimer();
+            this.timeLogger.resetTimer();
+            this.outputChannel.appendLine('🔄 Timer reset after successful commit logging');
         }
         catch (error) {
             this.outputChannel.appendLine(`❌ Error logging time for commit: ${error}`);

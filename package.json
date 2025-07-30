@@ -29,7 +29,11 @@
         "onCommand:jira-time-tracker.debug-head-files",
         "onCommand:jira-time-tracker.debug-trigger-head-change",
         "onCommand:jira-time-tracker.poc-environment",
-        "onCommand:jira-time-tracker.poc-branch-detection"
+        "onCommand:jira-time-tracker.poc-branch-detection",
+        "onCommand:jira-time-tracker.debug-commit",
+        "onCommand:jira-time-tracker.debug-git-state",
+        "onCommand:jira-time-tracker.debug-trigger-commit",
+        "onCommand:jira-time-tracker.test-extension"
     ],
     "main": "./out/extension.js",
     "contributes": {
@@ -137,6 +141,22 @@
             {
                 "command": "jira-time-tracker.debug-trigger-head-change",
                 "title": "Debug: Trigger HEAD File Change Handler"
+            },
+            {
+                "command": "jira-time-tracker.debug-commit",
+                "title": "Debug: Test Commit Handling"
+            },
+            {
+                "command": "jira-time-tracker.debug-git-state",
+                "title": "Debug: Show Git State"
+            },
+            {
+                "command": "jira-time-tracker.debug-trigger-commit",
+                "title": "Debug: Trigger Manual Commit Event"
+            },
+            {
+                "command": "jira-time-tracker.test-extension",
+                "title": "Test: Extension Working"
             }
         ],
         "configuration": {
