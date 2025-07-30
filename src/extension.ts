@@ -401,6 +401,10 @@ export function activate(context: vscode.ExtensionContext) {
             timeLogger,
             context
         );
+        
+        // Connect BranchChangeService to the sidebar provider
+        sidebarProvider.setBranchChangeService(branchChangeService);
+        
         context.subscriptions.push(
             vscode.window.registerWebviewViewProvider(
                 TimeTrackerSidebarProvider.viewType,

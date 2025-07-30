@@ -30,7 +30,7 @@ export class JiraService {
     /**
      * Get current user credentials (from auth service or fallback to settings)
      */
-    private async getCurrentCredentials(): Promise<UserCredentials> {
+    public async getCurrentCredentials(): Promise<UserCredentials> {
         // Try to get from authentication service first
         if (this.authService) {
             const credentials = await this.authService.getActiveUserCredentials();

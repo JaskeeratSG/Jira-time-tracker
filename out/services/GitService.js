@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GitService = void 0;
 const vscode = require("vscode");
+const axios_1 = require("axios"); // Added for direct Jira API calls
 class GitService {
     constructor(jiraService, outputChannel) {
         this.jiraService = jiraService;
@@ -373,47 +374,87 @@ class GitService {
     }
     async findLinkedJiraTicket(branchName, repoPath) {
         this.outputChannel.appendLine(`🔍 Searching for Jira ticket linked to branch: ${branchName}`);
-        // Method 1: Try to find ticket in Jira by searching for the branch name
-        try {
-            const searchResults = await this.jiraService.searchIssues('', `text ~ "${branchName}"`);
-            if (searchResults && searchResults.length > 0) {
-                this.outputChannel.appendLine(`✅ Found ${searchResults.length} potential tickets`);
-                // Return the first match for now (could be improved with better matching logic)
-                return searchResults[0].key;
-            }
-        }
-        catch (error) {
-            this.outputChannel.appendLine(`⚠️ Error searching Jira: ${error}`);
-        }
-        // Method 2: Extract ticket ID from branch name using common patterns
-        const ticketPatterns = [
-            /(?:feature|bugfix|hotfix|release)\/([A-Z]+-\d+)/i,
-            /([A-Z]+-\d+)/,
-            /(?:branch|b)\/([A-Z]+-\d+)/i
-        ];
-        for (const pattern of ticketPatterns) {
-            const match = branchName.match(pattern);
-            if (match) {
-                const ticketId = match[1];
-                this.outputChannel.appendLine(`🎯 Extracted ticket ID from branch name: ${ticketId}`);
-                // Verify the ticket exists in Jira
-                try {
-                    const exists = await this.jiraService.verifyTicketExists(ticketId);
-                    if (exists) {
-                        this.outputChannel.appendLine(`✅ Ticket ${ticketId} verified in Jira`);
-                        return ticketId;
-                    }
-                    else {
-                        this.outputChannel.appendLine(`❌ Ticket ${ticketId} not found in Jira`);
-                    }
-                }
-                catch (error) {
-                    this.outputChannel.appendLine(`⚠️ Error verifying ticket ${ticketId}: ${error}`);
+        // Method 1: Extract Jira ticket key from branch name and fetch directly from Jira API
+        const ticketKey = this.extractJiraTicketKey(branchName);
+        if (ticketKey) {
+            this.outputChannel.appendLine(`🎯 Extracted Jira ticket key from branch: ${ticketKey}`);
+            try {
+                // Fetch full ticket details directly from Jira REST API
+                const ticketDetails = await this.fetchTicketDetails(ticketKey);
+                if (ticketDetails) {
+                    this.outputChannel.appendLine(`✅ SUCCESS: Found linked Jira ticket for branch "${branchName}"`);
+                    this.outputChannel.appendLine(`   🎫 Ticket: ${ticketDetails.key}`);
+                    this.outputChannel.appendLine(`   📋 Project: ${ticketDetails.fields.project.key} - ${ticketDetails.fields.project.name}`);
+                    this.outputChannel.appendLine(`   📝 Summary: ${ticketDetails.fields.summary}`);
+                    this.outputChannel.appendLine(`   🏷️ Issue Type: ${ticketDetails.fields.issuetype.name}`);
+                    this.outputChannel.appendLine(`   📊 Status: ${ticketDetails.fields.status.name}`);
+                    this.outputChannel.appendLine(`   🔗 Branch-Ticket Relationship: DIRECT LINK (Created from Jira)`);
+                    return {
+                        ticketId: ticketDetails.key,
+                        projectKey: ticketDetails.fields.project.key,
+                        summary: ticketDetails.fields.summary,
+                        status: ticketDetails.fields.status.name
+                    };
                 }
             }
+            catch (error) {
+                this.outputChannel.appendLine(`❌ Error fetching ticket ${ticketKey} from Jira: ${error}`);
+            }
+        }
+        else {
+            this.outputChannel.appendLine(`❌ No Jira ticket key found in branch name: ${branchName}`);
+            this.outputChannel.appendLine(`   💡 Tip: Create branches using Jira's "Create Branch" feature for automatic linking`);
         }
         this.outputChannel.appendLine(`❌ No linked Jira ticket found for branch: ${branchName}`);
         return null;
+    }
+    extractJiraTicketKey(branchName) {
+        // Common patterns for Jira ticket keys in branch names
+        const patterns = [
+            /([A-Z]+-\d+)/,
+            /(?:feature|bugfix|hotfix|release)\/([A-Z]+-\d+)/i,
+            /(?:branch|b)\/([A-Z]+-\d+)/i,
+            /(?:feat|fix|chore)\/([A-Z]+-\d+)/i,
+            /(?:task|story|bug)\/([A-Z]+-\d+)/i // task/PROJECT-123
+        ];
+        for (const pattern of patterns) {
+            const match = branchName.match(pattern);
+            if (match) {
+                return match[1]; // Return the captured ticket key
+            }
+        }
+        return null;
+    }
+    async fetchTicketDetails(ticketKey) {
+        const credentials = await this.jiraService.getCurrentCredentials();
+        try {
+            const response = await axios_1.default.get(`${credentials.baseUrl}/rest/api/3/issue/${ticketKey}`, {
+                auth: {
+                    username: credentials.email,
+                    password: credentials.apiToken
+                },
+                headers: {
+                    'Accept': 'application/json'
+                }
+            });
+            if (response.status === 200) {
+                return response.data;
+            }
+            else {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+        }
+        catch (error) {
+            if (error.response?.status === 404) {
+                throw new Error(`Ticket ${ticketKey} not found in Jira`);
+            }
+            else if (error.response?.status === 401) {
+                throw new Error(`Authentication failed - check your Jira credentials`);
+            }
+            else {
+                throw new Error(`Failed to fetch ticket: ${error.message}`);
+            }
+        }
     }
     onBranchChange(callback) {
         this.callbacks.push(callback);
