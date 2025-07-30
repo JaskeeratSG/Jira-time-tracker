@@ -108,6 +108,11 @@ class JiraTimeLogger {
     resetTimer() {
         this.elapsedTime = 0;
         this.startTime = 0;
+        this.isRunning = false;
+        if (this.timer) {
+            clearInterval(this.timer);
+            this.timer = null;
+        }
         this.updateStatusBar();
     }
     updateStatusBar() {
@@ -1080,6 +1085,13 @@ class JiraTimeLogger {
     }
     getCurrentTime() {
         return this.getCurrentTrackedTime();
+    }
+    getElapsedMinutes() {
+        let totalTime = this.elapsedTime;
+        if (this.isRunning) {
+            totalTime = Date.now() - this.startTime;
+        }
+        return Math.round(totalTime / 1000 / 60);
     }
     async getBranchTicketInfo() {
         try {

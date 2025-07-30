@@ -120,9 +120,14 @@ export class JiraTimeLogger {
         }
     }
 
-    private resetTimer() {
+    public resetTimer() {
         this.elapsedTime = 0;
         this.startTime = 0;
+        this.isRunning = false;
+        if (this.timer) {
+            clearInterval(this.timer);
+            this.timer = null;
+        }
         this.updateStatusBar();
     }
 
@@ -1275,6 +1280,14 @@ export class JiraTimeLogger {
 
     public getCurrentTime(): string {
         return this.getCurrentTrackedTime();
+    }
+
+    public getElapsedMinutes(): number {
+        let totalTime = this.elapsedTime;
+        if (this.isRunning) {
+            totalTime = Date.now() - this.startTime;
+        }
+        return Math.round(totalTime / 1000 / 60);
     }
 
     public async getBranchTicketInfo(): Promise<{ projectKey: string; issueKey: string } | null> {

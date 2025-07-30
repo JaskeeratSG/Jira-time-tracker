@@ -1,7 +1,9 @@
 import * as vscode from 'vscode';
 import { JiraTimeLogger } from './JiraTimeLogger';
+import { AuthenticationService } from './services/AuthenticationService';
 import { TimeTrackerSidebarProvider } from './ui/TimeTrackerSidebarProvider';
 import { BranchChangeService } from './services/BranchChangeService';
+import { GitService, CommitEvent } from './services/GitService';
 
 let outputChannel: vscode.OutputChannel;
 
@@ -567,7 +569,15 @@ export function activate(context: vscode.ExtensionContext) {
                     });
                     
                     if (commitMessage) {
-                        await branchChangeService.handleCommit(commitMessage);
+                        // Create a mock CommitEvent for manual commit logging
+                        const mockCommitEvent = {
+                            workspacePath: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '',
+                            branch: 'manual-commit',
+                            commitHash: 'manual',
+                            commitMessage: commitMessage,
+                            timestamp: Date.now()
+                        };
+                        await branchChangeService.handleCommit(mockCommitEvent);
                         vscode.window.showInformationMessage('Time logged for commit!');
                     }
                 } catch (error) {
@@ -754,6 +764,153 @@ export function activate(context: vscode.ExtensionContext) {
                 }
             })
         );
+
+        context.subscriptions.push(
+            vscode.commands.registerCommand('jira-time-tracker.debug-commit', async () => {
+                try {
+                    const commitMessage = 'Test commit message';
+                    outputChannel.appendLine(`🧪 Testing commit handling with message: ${commitMessage}`);
+                    
+                    // Create a mock CommitEvent for debug testing
+                    const mockCommitEvent = {
+                        workspacePath: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '',
+                        branch: 'debug-test',
+                        commitHash: 'debug',
+                        commitMessage: commitMessage,
+                        timestamp: Date.now()
+                    };
+                    await branchChangeService.handleCommit(mockCommitEvent);
+                    vscode.window.showInformationMessage('Commit test completed!');
+                } catch (error) {
+                    outputChannel.appendLine(`Error testing commit: ${error}`);
+                    vscode.window.showErrorMessage(`Failed to test commit: ${error}`);
+                }
+            })
+        );
+
+        context.subscriptions.push(
+            vscode.commands.registerCommand('jira-time-tracker.debug-git-state', async () => {
+                try {
+                    outputChannel.appendLine('🔍 Debugging Git state...');
+                    const gitService = (branchChangeService as any).gitService;
+                    if (gitService) {
+                        gitService.debugCurrentBranch();
+                        const repos = gitService.getAllRepositories();
+                        outputChannel.appendLine(`📁 Found ${repos.length} repositories:`);
+                        repos.forEach((repo: any, index: number) => {
+                            outputChannel.appendLine(`  ${index + 1}. ${repo.path} - Branch: ${repo.branch} - Commit: ${repo.lastCommit?.substring(0, 8) || 'none'}`);
+                        });
+                    }
+                    vscode.window.showInformationMessage('Git state debug completed!');
+                } catch (error) {
+                    outputChannel.appendLine(`Error debugging Git state: ${error}`);
+                    vscode.window.showErrorMessage(`Failed to debug Git state: ${error}`);
+                }
+            })
+        );
+
+        context.subscriptions.push(
+            vscode.commands.registerCommand('jira-time-tracker.debug-trigger-commit', async () => {
+                try {
+                    outputChannel.appendLine('🧪 Manually triggering commit event...');
+                    const gitService = (branchChangeService as any).gitService;
+                    if (gitService) {
+                        await gitService.debugTriggerCommit();
+                    }
+                    vscode.window.showInformationMessage('Manual commit trigger completed!');
+                } catch (error) {
+                    outputChannel.appendLine(`Error triggering commit: ${error}`);
+                    vscode.window.showErrorMessage(`Failed to trigger commit: ${error}`);
+                }
+            })
+        );
+
+        context.subscriptions.push(
+            vscode.commands.registerCommand('jira-time-tracker.test-extension', () => {
+                outputChannel.appendLine('✅ Extension test command executed successfully!');
+                outputChannel.appendLine(`📅 Current time: ${new Date().toISOString()}`);
+                outputChannel.appendLine(`🔧 Extension version: 0.0.5`);
+                vscode.window.showInformationMessage('Extension test completed! Check output panel.');
+            })
+        );
+
+        // Debug commands
+        context.subscriptions.push(
+            vscode.commands.registerCommand('jira-time-tracker.debugTriggerCommit', async () => {
+                outputChannel.appendLine('🔧 Debug: Triggering manual commit event...');
+                const mockEvent: CommitEvent = {
+                    workspacePath: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '',
+                    branch: 'test-branch',
+                    commitHash: 'test-commit',
+                    commitMessage: 'Test commit message',
+                    timestamp: Date.now()
+                };
+                await branchChangeService.handleCommit(mockEvent);
+            })
+        );
+
+        context.subscriptions.push(
+            vscode.commands.registerCommand('jira-time-tracker.debugTriggerHeadChange', async () => {
+                outputChannel.appendLine('🔧 Debug: Triggering HEAD file change...');
+                const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+                if (workspacePath) {
+                    // Get the GitService instance from BranchChangeService
+                    const gitService = (branchChangeService as any).gitService;
+                    if (gitService) {
+                        await gitService.debugTriggerHeadFileChange(workspacePath);
+                    } else {
+                        outputChannel.appendLine('❌ GitService not available');
+                    }
+                } else {
+                    outputChannel.appendLine('❌ No workspace folder found');
+                }
+            })
+        );
+
+        context.subscriptions.push(
+            vscode.commands.registerCommand('jira-time-tracker.debugGitStatus', async () => {
+                outputChannel.appendLine('🔧 Debug: Checking Git status...');
+                const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+                if (workspacePath) {
+                    // Get the GitService instance from BranchChangeService
+                    const gitService = (branchChangeService as any).gitService;
+                    if (gitService) {
+                        gitService.debugCurrentBranch();
+                        gitService.debugFileWatchers();
+                        await gitService.debugHeadFiles();
+                    } else {
+                        outputChannel.appendLine('❌ GitService not available');
+                    }
+                } else {
+                    outputChannel.appendLine('❌ No workspace folder found');
+                }
+            })
+        );
+
+        context.subscriptions.push(
+            vscode.commands.registerCommand('jira-time-tracker.debugPeriodicCheck', async () => {
+                outputChannel.appendLine('🔧 Debug: Testing periodic commit check...');
+                const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+                if (workspacePath) {
+                    // Get the GitService instance from BranchChangeService
+                    const gitService = (branchChangeService as any).gitService;
+                    if (gitService) {
+                        // Manually trigger a commit check
+                        const currentCommit = await gitService.getCurrentCommitFromFile(workspacePath);
+                        const lastKnownCommit = gitService.lastKnownCommits?.get(workspacePath);
+                        outputChannel.appendLine(`📝 Current commit: ${currentCommit}`);
+                        outputChannel.appendLine(`📝 Last known commit: ${lastKnownCommit}`);
+                        outputChannel.appendLine(`📝 Commits different: ${currentCommit !== lastKnownCommit}`);
+                    } else {
+                        outputChannel.appendLine('❌ GitService not available');
+                    }
+                } else {
+                    outputChannel.appendLine('❌ No workspace folder found');
+                }
+            })
+        );
+
+        
 
         outputChannel.appendLine('Extension activated successfully');
 

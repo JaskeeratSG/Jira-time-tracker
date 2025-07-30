@@ -3,13 +3,17 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.GitService = void 0;
 const vscode = require("vscode");
 const axios_1 = require("axios"); // Added for direct Jira API calls
+const path = require("path"); // Added for path.join
 class GitService {
     constructor(jiraService, outputChannel) {
         this.jiraService = jiraService;
         this.repositories = new Map(); // Using any for vscode.Git since it's not exported
         this.callbacks = [];
+        this.commitCallbacks = [];
         this.lastKnownBranches = new Map();
+        this.lastKnownCommits = new Map();
         this.fileWatchers = new Map();
+        this.headFileWatchers = new Map(); // Added for debug logging
         this.outputChannel = outputChannel;
         this.initializeGitExtension();
     }
@@ -88,19 +92,31 @@ class GitService {
         }
     }
     async setupFileSystemWatchers() {
-        try {
-            this.outputChannel.appendLine('📁 Setting up file system watchers for Git repositories...');
-            const workspaceFolders = vscode.workspace.workspaceFolders;
-            if (!workspaceFolders) {
-                this.outputChannel.appendLine('⚠️ No workspace folders found');
-                return;
-            }
-            for (const folder of workspaceFolders) {
-                await this.setupWatcherForFolder(folder.uri.fsPath);
-            }
+        this.outputChannel.appendLine('🔍 Setting up file system watchers...');
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders) {
+            this.outputChannel.appendLine('⚠️ No workspace folders found');
+            return;
         }
-        catch (error) {
-            this.outputChannel.appendLine(`❌ Error setting up file system watchers: ${error}`);
+        for (const folder of workspaceFolders) {
+            await this.setupWatcherForFolder(folder.uri.fsPath);
+        }
+        // Initialize last known commits for all repositories
+        await this.initializeLastKnownCommits();
+    }
+    async initializeLastKnownCommits() {
+        this.outputChannel.appendLine('🔍 Initializing last known commits...');
+        for (const [repoPath, _] of this.headFileWatchers) {
+            try {
+                const currentCommit = await this.getCurrentCommitFromFile(repoPath);
+                if (currentCommit) {
+                    this.lastKnownCommits.set(repoPath, currentCommit);
+                    this.outputChannel.appendLine(`✅ Initialized last known commit for ${repoPath}: ${currentCommit}`);
+                }
+            }
+            catch (error) {
+                this.outputChannel.appendLine(`❌ Error initializing commit for ${repoPath}: ${error}`);
+            }
         }
     }
     async setupWatcherForFolder(folderPath) {
@@ -110,7 +126,7 @@ class GitService {
             // Check if .git/HEAD exists
             await vscode.workspace.fs.stat(gitHeadPath);
             this.outputChannel.appendLine(`✅ Setting up watcher for Git repository: ${folderPath}`);
-            this.setupHeadFileWatcher(folderPath, gitHeadPath);
+            this.setupHeadFileWatcher(folderPath);
         }
         catch {
             // Check subfolders for Git repositories
@@ -127,7 +143,7 @@ class GitService {
                     try {
                         await vscode.workspace.fs.stat(subGitHeadPath);
                         this.outputChannel.appendLine(`✅ Setting up watcher for Git repository in subfolder: ${subFolderPath.fsPath}`);
-                        this.setupHeadFileWatcher(subFolderPath.fsPath, subGitHeadPath);
+                        this.setupHeadFileWatcher(subFolderPath.fsPath);
                     }
                     catch {
                         // Not a Git repository
@@ -139,33 +155,73 @@ class GitService {
             this.outputChannel.appendLine(`❌ Error reading subfolders in ${folderPath}: ${error}`);
         }
     }
-    setupHeadFileWatcher(repoPath, headPath) {
-        this.outputChannel.appendLine(`🔧 Setting up HEAD file watcher for: ${repoPath}`);
-        this.outputChannel.appendLine(`📁 HEAD file path: ${headPath.fsPath}`);
-        // Create a file system watcher for the HEAD file
-        const watcher = vscode.workspace.createFileSystemWatcher(headPath.fsPath);
-        // Store the current branch
-        this.getCurrentBranchFromFile(repoPath).then(currentBranch => {
-            this.lastKnownBranches.set(repoPath, currentBranch);
-            this.outputChannel.appendLine(`🌿 Initial branch for ${repoPath}: ${currentBranch}`);
-        });
-        // Watch for changes to the HEAD file
-        watcher.onDidChange(() => {
-            this.outputChannel.appendLine(`📝 HEAD file changed for repository: ${repoPath}`);
-            this.outputChannel.appendLine(`🔍 Calling handleHeadFileChange for: ${repoPath}`);
+    setupHeadFileWatcher(repoPath) {
+        const headFilePath = path.join(repoPath, '.git', 'HEAD');
+        this.outputChannel.appendLine(`🔍 [HEAD WATCHER] Setting up watcher for: ${headFilePath}`);
+        const watcher = vscode.workspace.createFileSystemWatcher(headFilePath);
+        watcher.onDidChange((uri) => {
+            this.outputChannel.appendLine(`🔍 [HEAD WATCHER] HEAD file changed: ${uri.fsPath}`);
             this.handleHeadFileChange(repoPath);
         });
-        // Also watch for creation and deletion events for debugging
-        watcher.onDidCreate(() => {
-            this.outputChannel.appendLine(`📝 HEAD file created for repository: ${repoPath}`);
-            this.outputChannel.appendLine(`🔍 Calling handleHeadFileChange for: ${repoPath} (from create event)`);
+        watcher.onDidCreate((uri) => {
+            this.outputChannel.appendLine(`🔍 [HEAD WATCHER] HEAD file created: ${uri.fsPath}`);
             this.handleHeadFileChange(repoPath);
         });
-        watcher.onDidDelete(() => {
-            this.outputChannel.appendLine(`📝 HEAD file deleted for repository: ${repoPath}`);
+        this.headFileWatchers.set(repoPath, watcher);
+        this.outputChannel.appendLine(`✅ [HEAD WATCHER] Watcher set up for ${repoPath}`);
+        // Also watch the objects directory for new commits
+        this.setupObjectsWatcher(repoPath);
+    }
+    setupObjectsWatcher(repoPath) {
+        const objectsPath = path.join(repoPath, '.git', 'objects');
+        this.outputChannel.appendLine(`🔍 [OBJECTS WATCHER] Setting up watcher for: ${objectsPath}`);
+        // Watch for new files in the objects directory (new commits)
+        const watcher = vscode.workspace.createFileSystemWatcher(path.join(objectsPath, '**'));
+        watcher.onDidCreate((uri) => {
+            this.outputChannel.appendLine(`🔍 [OBJECTS WATCHER] New object created: ${uri.fsPath}`);
+            // Check if this is a commit object
+            if (uri.fsPath.includes('/objects/') && !uri.fsPath.includes('/pack/')) {
+                this.outputChannel.appendLine(`🔍 [OBJECTS WATCHER] Potential new commit detected`);
+                this.handleHeadFileChange(repoPath);
+            }
         });
-        this.fileWatchers.set(repoPath, watcher);
-        this.outputChannel.appendLine(`✅ File watcher set up for: ${repoPath}`);
+        this.outputChannel.appendLine(`✅ [OBJECTS WATCHER] Objects watcher set up for ${repoPath}`);
+        // Also set up a periodic check for new commits
+        this.setupPeriodicCommitCheck(repoPath);
+    }
+    setupPeriodicCommitCheck(repoPath) {
+        this.outputChannel.appendLine(`🔍 [PERIODIC CHECK] Setting up periodic commit check for: ${repoPath}`);
+        // Check for new commits every 5 seconds
+        const interval = setInterval(async () => {
+            try {
+                const currentCommit = await this.getCurrentCommitFromFile(repoPath);
+                const lastKnownCommit = this.lastKnownCommits.get(repoPath);
+                if (currentCommit && lastKnownCommit && currentCommit !== lastKnownCommit) {
+                    this.outputChannel.appendLine(`🔍 [PERIODIC CHECK] New commit detected: ${currentCommit} (was: ${lastKnownCommit})`);
+                    // Get commit message
+                    const commitMessage = await this.getCommitMessageFromFile(repoPath, currentCommit);
+                    const currentBranch = await this.getCurrentBranchFromFile(repoPath);
+                    if (commitMessage && currentBranch) {
+                        const commitEvent = {
+                            workspacePath: repoPath,
+                            branch: currentBranch,
+                            commitHash: currentCommit,
+                            commitMessage: commitMessage,
+                            timestamp: Date.now()
+                        };
+                        this.outputChannel.appendLine(`📝 [PERIODIC CHECK] Triggering commit event: ${commitMessage}`);
+                        this.commitCallbacks.forEach(callback => callback(commitEvent));
+                    }
+                    // Update last known commit
+                    this.lastKnownCommits.set(repoPath, currentCommit);
+                }
+            }
+            catch (error) {
+                this.outputChannel.appendLine(`❌ [PERIODIC CHECK] Error checking commits: ${error}`);
+            }
+        }, 5000); // Check every 5 seconds
+        // Store the interval for cleanup
+        this.outputChannel.appendLine(`✅ [PERIODIC CHECK] Periodic commit check set up for ${repoPath}`);
     }
     async getCurrentBranchFromFile(repoPath) {
         try {
@@ -186,21 +242,25 @@ class GitService {
         }
     }
     async handleHeadFileChange(repoPath) {
+        this.outputChannel.appendLine(`🔍 [HEAD CHANGE] Processing HEAD file change for: ${repoPath}`);
         try {
-            const newBranch = await this.getCurrentBranchFromFile(repoPath);
+            // Get current branch and commit
+            const currentBranch = await this.getCurrentBranchFromFile(repoPath);
+            const currentCommit = await this.getCurrentCommitFromFile(repoPath);
+            this.outputChannel.appendLine(`🔍 [HEAD CHANGE] Current branch: ${currentBranch}, commit: ${currentCommit}`);
             const lastKnownBranch = this.lastKnownBranches.get(repoPath);
-            this.outputChannel.appendLine(`🔍 HEAD file change detected for ${repoPath}: ${lastKnownBranch || 'none'} → ${newBranch}`);
-            if (lastKnownBranch && lastKnownBranch !== newBranch) {
-                this.outputChannel.appendLine(`🔄 Branch changed in ${repoPath}: ${lastKnownBranch} → ${newBranch}`);
+            const lastKnownCommit = this.lastKnownCommits.get(repoPath);
+            this.outputChannel.appendLine(`🔍 [HEAD CHANGE] Last known branch: ${lastKnownBranch}, commit: ${lastKnownCommit}`);
+            // Check for branch change
+            if (lastKnownBranch && lastKnownBranch !== currentBranch) {
+                this.outputChannel.appendLine(`🔄 Branch changed in ${repoPath}: ${lastKnownBranch} → ${currentBranch}`);
                 const event = {
                     workspacePath: repoPath,
                     oldBranch: lastKnownBranch,
-                    newBranch: newBranch,
+                    newBranch: currentBranch,
                     timestamp: Date.now()
                 };
-                // Update the last known branch
-                this.lastKnownBranches.set(repoPath, newBranch);
-                // Notify callbacks
+                this.lastKnownBranches.set(repoPath, currentBranch);
                 this.callbacks.forEach(callback => {
                     try {
                         callback(event);
@@ -210,9 +270,109 @@ class GitService {
                     }
                 });
             }
+            // Check for commit change
+            if (lastKnownCommit && lastKnownCommit !== currentCommit && currentCommit !== 'unknown') {
+                this.outputChannel.appendLine(`📝 New commit detected in ${repoPath}: ${lastKnownCommit} → ${currentCommit}`);
+                await this.checkForNewCommit(repoPath, currentBranch);
+            }
+            // Initialize tracking if not previously tracked
+            if (!lastKnownBranch) {
+                this.lastKnownBranches.set(repoPath, currentBranch);
+                this.outputChannel.appendLine(`📝 Initialized branch tracking for ${repoPath}: ${currentBranch}`);
+            }
+            if (!lastKnownCommit && currentCommit !== 'unknown') {
+                this.lastKnownCommits.set(repoPath, currentCommit);
+                this.outputChannel.appendLine(`📝 Initialized commit tracking for ${repoPath}: ${currentCommit}`);
+            }
         }
         catch (error) {
             this.outputChannel.appendLine(`❌ Error handling HEAD file change for ${repoPath}: ${error}`);
+        }
+    }
+    async checkForNewCommit(repoPath, currentBranch) {
+        try {
+            this.outputChannel.appendLine(`🔍 [COMMIT DEBUG] Checking for new commit in ${repoPath}`);
+            const currentCommit = await this.getCurrentCommitFromFile(repoPath);
+            const lastKnownCommit = this.lastKnownCommits.get(repoPath);
+            this.outputChannel.appendLine(`🔍 [COMMIT DEBUG] Current commit: ${currentCommit}, Last known: ${lastKnownCommit}`);
+            if (lastKnownCommit && lastKnownCommit !== currentCommit && currentCommit !== 'unknown') {
+                this.outputChannel.appendLine(`📝 New commit detected in ${repoPath}: ${lastKnownCommit} → ${currentCommit}`);
+                const commitMessage = await this.getCommitMessageFromFile(repoPath, currentCommit);
+                const event = {
+                    workspacePath: repoPath,
+                    branch: currentBranch,
+                    commitHash: currentCommit,
+                    commitMessage: commitMessage,
+                    timestamp: Date.now()
+                };
+                this.lastKnownCommits.set(repoPath, currentCommit);
+                this.outputChannel.appendLine(`📝 Triggering commit callbacks for ${repoPath}...`);
+                this.commitCallbacks.forEach(callback => {
+                    try {
+                        this.outputChannel.appendLine(`📝 Notifying commit callback...`);
+                        callback(event);
+                    }
+                    catch (error) {
+                        this.outputChannel.appendLine(`Error in commit callback: ${error}`);
+                    }
+                });
+            }
+            else if (currentCommit !== 'unknown') {
+                this.lastKnownCommits.set(repoPath, currentCommit);
+                this.outputChannel.appendLine(`📝 Initialized commit tracking for ${repoPath}: ${currentCommit}`);
+            }
+        }
+        catch (error) {
+            this.outputChannel.appendLine(`❌ Error checking for new commit in ${repoPath}: ${error}`);
+        }
+    }
+    async getCurrentCommitFromFile(repoPath) {
+        try {
+            const headFilePath = path.join(repoPath, '.git', 'HEAD');
+            const headContent = await vscode.workspace.fs.readFile(vscode.Uri.file(headFilePath));
+            const headText = Buffer.from(headContent).toString('utf8').trim();
+            // If HEAD points to a branch, read the commit hash from the branch file
+            if (headText.startsWith('ref: refs/heads/')) {
+                const branchName = headText.replace('ref: refs/heads/', '');
+                const branchFilePath = path.join(repoPath, '.git', 'refs', 'heads', branchName);
+                const branchContent = await vscode.workspace.fs.readFile(vscode.Uri.file(branchFilePath));
+                return Buffer.from(branchContent).toString('utf8').trim();
+            }
+            else {
+                // HEAD points directly to a commit hash
+                return headText;
+            }
+        }
+        catch (error) {
+            this.outputChannel.appendLine(`❌ Error reading commit from file for ${repoPath}: ${error}`);
+            return '';
+        }
+    }
+    async getCommitMessageFromFile(repoPath, commitHash) {
+        try {
+            // Read the commit object from the Git objects directory
+            const objectPath = vscode.Uri.joinPath(vscode.Uri.file(repoPath), '.git', 'objects', commitHash.substring(0, 2), commitHash.substring(2));
+            const objectContent = await vscode.workspace.fs.readFile(objectPath);
+            const objectText = Buffer.from(objectContent).toString('utf8');
+            // Parse the commit object to extract the message
+            // Git commit objects have a specific format
+            const lines = objectText.split('\n');
+            let inMessage = false;
+            const messageLines = [];
+            for (const line of lines) {
+                if (line === '') {
+                    inMessage = true;
+                    continue;
+                }
+                if (inMessage) {
+                    messageLines.push(line);
+                }
+            }
+            return messageLines.join('\n') || `Commit ${commitHash.substring(0, 8)}`;
+        }
+        catch (error) {
+            this.outputChannel.appendLine(`❌ Error reading commit message for ${commitHash}: ${error}`);
+            return `Commit ${commitHash.substring(0, 8)}`;
         }
     }
     setupRepositoryWatchers() {
@@ -283,8 +443,11 @@ class GitService {
     handleRepositoryStateChange(repo) {
         const repoPath = repo.rootUri.fsPath;
         const newBranch = repo.state.head?.name || 'unknown';
+        const newCommit = repo.state.head?.commit || 'unknown';
         const lastKnownBranch = this.lastKnownBranches.get(repoPath);
-        this.outputChannel.appendLine(`🔍 State change detected for ${repoPath}: ${lastKnownBranch || 'none'} → ${newBranch}`);
+        const lastKnownCommit = this.lastKnownCommits.get(repoPath);
+        this.outputChannel.appendLine(`🔍 State change detected for ${repoPath}: branch=${lastKnownBranch || 'none'} → ${newBranch}, commit=${lastKnownCommit || 'none'} → ${newCommit}`);
+        // Check for branch change
         if (lastKnownBranch && lastKnownBranch !== newBranch) {
             this.outputChannel.appendLine(`🔄 Branch changed in ${repoPath}: ${lastKnownBranch} → ${newBranch}`);
             const event = {
@@ -305,6 +468,42 @@ class GitService {
                     this.outputChannel.appendLine(`Error in branch change callback: ${error}`);
                 }
             });
+        }
+        // Check for commit change (new commit on same branch or initial commit)
+        if (lastKnownCommit && lastKnownCommit !== newCommit && newCommit !== 'unknown') {
+            this.outputChannel.appendLine(`📝 New commit detected in ${repoPath}: ${lastKnownCommit} → ${newCommit}`);
+            // Get commit message (this would require additional Git API calls)
+            // For now, we'll use a placeholder and get the actual message when needed
+            const commitMessage = `Commit ${newCommit.substring(0, 8)}`;
+            const event = {
+                workspacePath: repoPath,
+                branch: newBranch,
+                commitHash: newCommit,
+                commitMessage: commitMessage,
+                timestamp: Date.now(),
+                repository: repo
+            };
+            // Update the last known commit
+            this.lastKnownCommits.set(repoPath, newCommit);
+            // Notify commit callbacks
+            this.commitCallbacks.forEach(callback => {
+                try {
+                    this.outputChannel.appendLine(`📝 Notifying commit callback...`);
+                    callback(event);
+                }
+                catch (error) {
+                    this.outputChannel.appendLine(`Error in commit callback: ${error}`);
+                }
+            });
+        }
+        // Initialize tracking if not previously tracked
+        if (!lastKnownBranch) {
+            this.lastKnownBranches.set(repoPath, newBranch);
+            this.outputChannel.appendLine(`📝 Initialized branch tracking for ${repoPath}: ${newBranch}`);
+        }
+        if (!lastKnownCommit && newCommit !== 'unknown') {
+            this.lastKnownCommits.set(repoPath, newCommit);
+            this.outputChannel.appendLine(`📝 Initialized commit tracking for ${repoPath}: ${newCommit.substring(0, 8)}`);
         }
     }
     setupActiveEditorTracking() {
@@ -467,6 +666,17 @@ class GitService {
             this.outputChannel.appendLine(`📝 Unregistered branch change callback (total: ${this.callbacks.length})`);
         }
     }
+    onCommitChange(callback) {
+        this.commitCallbacks.push(callback);
+        this.outputChannel.appendLine(`📝 Registered commit change callback (total: ${this.commitCallbacks.length})`);
+    }
+    offCommitChange(callback) {
+        const index = this.commitCallbacks.indexOf(callback);
+        if (index > -1) {
+            this.commitCallbacks.splice(index, 1);
+            this.outputChannel.appendLine(`📝 Unregistered commit change callback (total: ${this.commitCallbacks.length})`);
+        }
+    }
     getAllRepositories() {
         const repos = [];
         this.repositories.forEach((repo, path) => {
@@ -561,6 +771,70 @@ class GitService {
                 this.outputChannel.appendLine(`📁 Triggering for: ${watchedRepoPath}`);
                 await this.handleHeadFileChange(watchedRepoPath);
             }
+        }
+    }
+    async debugTriggerCommit(repoPath) {
+        try {
+            this.outputChannel.appendLine('🧪 Manually triggering commit event...');
+            // Use file watchers instead of Git API
+            if (repoPath) {
+                this.outputChannel.appendLine(`📁 Triggering for specific repo: ${repoPath}`);
+                if (this.fileWatchers.has(repoPath)) {
+                    const currentBranch = await this.getCurrentBranchFromFile(repoPath);
+                    const currentCommit = await this.getCurrentCommitFromFile(repoPath);
+                    const commitMessage = await this.getCommitMessageFromFile(repoPath, currentCommit);
+                    this.outputChannel.appendLine(`  Branch: ${currentBranch}, Commit: ${currentCommit.substring(0, 8)}`);
+                    const event = {
+                        workspacePath: repoPath,
+                        branch: currentBranch,
+                        commitHash: currentCommit,
+                        commitMessage: commitMessage,
+                        timestamp: Date.now()
+                    };
+                    this.outputChannel.appendLine(`📝 Triggering commit callbacks...`);
+                    this.commitCallbacks.forEach(callback => {
+                        try {
+                            callback(event);
+                        }
+                        catch (error) {
+                            this.outputChannel.appendLine(`Error in manual commit callback: ${error}`);
+                        }
+                    });
+                }
+                else {
+                    this.outputChannel.appendLine(`❌ No file watcher found for: ${repoPath}`);
+                }
+            }
+            else {
+                this.outputChannel.appendLine(`📁 Triggering for all watched repos...`);
+                for (const [watchedRepoPath, _] of this.fileWatchers) {
+                    this.outputChannel.appendLine(`📁 Triggering for: ${watchedRepoPath}`);
+                    const currentBranch = await this.getCurrentBranchFromFile(watchedRepoPath);
+                    const currentCommit = await this.getCurrentCommitFromFile(watchedRepoPath);
+                    const commitMessage = await this.getCommitMessageFromFile(watchedRepoPath, currentCommit);
+                    this.outputChannel.appendLine(`  Branch: ${currentBranch}, Commit: ${currentCommit.substring(0, 8)}`);
+                    const event = {
+                        workspacePath: watchedRepoPath,
+                        branch: currentBranch,
+                        commitHash: currentCommit,
+                        commitMessage: commitMessage,
+                        timestamp: Date.now()
+                    };
+                    this.outputChannel.appendLine(`📝 Triggering commit callbacks...`);
+                    this.commitCallbacks.forEach(callback => {
+                        try {
+                            callback(event);
+                        }
+                        catch (error) {
+                            this.outputChannel.appendLine(`Error in manual commit callback: ${error}`);
+                        }
+                    });
+                }
+            }
+            this.outputChannel.appendLine('✅ Manual commit trigger completed');
+        }
+        catch (error) {
+            this.outputChannel.appendLine(`❌ Error triggering commit: ${error}`);
         }
     }
 }
