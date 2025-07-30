@@ -6,6 +6,25 @@ const vscode = require("vscode");
 class ProductiveService {
     constructor() { }
     /**
+     * Get current local date in YYYY-MM-DD format
+     */
+    getLocalDateString() {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+    /**
+     * Format a Date object to local date string in YYYY-MM-DD format
+     */
+    formatDateToLocal(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+    /**
      * Get essential Productive credentials from VS Code settings or environment variables
      */
     getCredentials() {
@@ -236,7 +255,7 @@ class ProductiveService {
         try {
             const credentials = this.getCredentials();
             const user = await this.getAuthenticatedUser();
-            const entryDate = date || new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+            const entryDate = date || this.getLocalDateString(); // Use local date instead of UTC
             const timeEntry = {
                 data: {
                     type: 'time_entries',
@@ -342,7 +361,7 @@ class ProductiveService {
                 throw new Error('No services available for user');
             }
             const serviceId = services[0].serviceId;
-            const dateString = date ? date.toISOString().split('T')[0] : undefined;
+            const dateString = date ? this.formatDateToLocal(date) : undefined;
             return this.logMyTimeEntry(projectId, serviceId, timeInMinutes, dateString, note, ticketId);
         }
         catch (error) {

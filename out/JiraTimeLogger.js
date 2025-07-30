@@ -12,10 +12,20 @@ class JiraTimeLogger {
         this.isRunning = false;
         this.currentProject = null;
         this.currentIssue = null;
-        this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
+        this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
         this.jiraService = new JiraService_1.JiraService();
-        this.outputChannel = vscode.window.createOutputChannel('Jira Time Tracker - Productive Integration');
+        this.outputChannel = vscode.window.createOutputChannel('Jira Time Tracker');
         this.updateStatusBar();
+    }
+    /**
+     * Get current local date in YYYY-MM-DD format
+     */
+    getLocalDateString() {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
     }
     /**
      * Log message to both console and VS Code output channel
@@ -934,7 +944,7 @@ class JiraTimeLogger {
     async createProductiveTimeEntryExact(credentials, personId, projectId, serviceId, timeMinutes, description, jiraTicketId) {
         const axios = require('axios');
         try {
-            const entryDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+            const entryDate = this.getLocalDateString(); // Use local date instead of UTC
             this.log(`   💾 Creating time entry: ${timeMinutes} minutes on ${entryDate}...`);
             this.log(`   📋 API URL: ${credentials.baseUrl}/time_entries`);
             this.log(`   📋 Headers: X-Auth-Token: ${credentials.apiToken ? 'Present' : 'Missing'}, X-Organization-Id: ${credentials.organizationId}`);
