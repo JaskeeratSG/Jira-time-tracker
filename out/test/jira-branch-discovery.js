@@ -4,7 +4,6 @@ exports.JiraBranchDiscovery = void 0;
 // Set test environment before any imports
 process.env.NODE_ENV = 'test';
 const axios_1 = require("axios");
-const GitService_1 = require("../services/GitService");
 const JiraService_1 = require("../services/JiraService");
 const settings_1 = require("../config/settings");
 /**
@@ -13,7 +12,8 @@ const settings_1 = require("../config/settings");
  */
 class JiraBranchDiscovery {
     constructor() {
-        this.gitService = new GitService_1.GitService();
+        // Note: GitService now requires JiraService and outputChannel
+        // this.gitService = new GitService();
         this.jiraService = new JiraService_1.JiraService();
     }
     /**
@@ -22,7 +22,9 @@ class JiraBranchDiscovery {
     async findLinkedTicket() {
         console.log('🔍 JIRA BRANCH DISCOVERY');
         console.log('='.repeat(60));
-        const branchName = await this.gitService.getBranchName();
+        // Note: GitService methods are deprecated
+        // const branchName = await this.gitService.getBranchName();
+        const branchName = 'unknown'; // Placeholder since GitService is deprecated
         console.log(`📋 Current branch: ${branchName}`);
         try {
             // Method 1: Search for tickets with development information (branches)
@@ -198,7 +200,9 @@ class JiraBranchDiscovery {
         console.log('\n🔍 DIRECT PROJECT SEARCH');
         console.log('='.repeat(40));
         try {
-            const branchName = await this.gitService.getBranchName();
+            // Note: GitService methods are deprecated
+            // const branchName = await this.gitService.getBranchName();
+            const branchName = 'unknown'; // Placeholder since GitService is deprecated
             console.log(`📋 Branch: ${branchName}`);
             // Extract project key from branch name
             const projectMatch = branchName.match(/feat\/([A-Z]+)/i);

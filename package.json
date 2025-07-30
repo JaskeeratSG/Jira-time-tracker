@@ -15,7 +15,21 @@
         "onCommand:jira-time-logger.resumeTimer",
         "onCommand:jira-time-logger.finishAndLog",
         "onCommand:jira-time-tracker.testProductiveConnection",
-        "onCommand:jira-time-tracker.showCurrentSettings"
+        "onCommand:jira-time-tracker.showCurrentSettings",
+        "onCommand:jira-time-tracker.initialize-branch-detection",
+        "onCommand:jira-time-tracker.toggle-auto-start",
+        "onCommand:jira-time-tracker.toggle-auto-log",
+        "onCommand:jira-time-tracker.show-branch-info",
+        "onCommand:jira-time-tracker.manual-commit-log",
+        "onCommand:jira-time-tracker.debug-branch-info",
+        "onCommand:jira-time-tracker.force-git-activation",
+        "onCommand:jira-time-tracker.check-git-status",
+        "onCommand:jira-time-tracker.refresh-git-repos",
+        "onCommand:jira-time-tracker.debug-file-watchers",
+        "onCommand:jira-time-tracker.debug-head-files",
+        "onCommand:jira-time-tracker.debug-trigger-head-change",
+        "onCommand:jira-time-tracker.poc-environment",
+        "onCommand:jira-time-tracker.poc-branch-detection"
     ],
     "main": "./out/extension.js",
     "contributes": {
@@ -67,6 +81,62 @@
             {
                 "command": "jira-time-tracker.showCurrentSettings",
                 "title": "JIRA: Show Current Settings"
+            },
+            {
+                "command": "jira-time-tracker.poc-environment",
+                "title": "POC: Test Environment Detection"
+            },
+            {
+                "command": "jira-time-tracker.poc-branch-detection",
+                "title": "POC: Test Branch Detection"
+            },
+            {
+                "command": "jira-time-tracker.initialize-branch-detection",
+                "title": "Initialize Branch Detection"
+            },
+            {
+                "command": "jira-time-tracker.toggle-auto-start",
+                "title": "Toggle Auto-Start Timer"
+            },
+            {
+                "command": "jira-time-tracker.toggle-auto-log",
+                "title": "Toggle Auto-Log on Commit"
+            },
+            {
+                "command": "jira-time-tracker.show-branch-info",
+                "title": "Show Current Branch Info"
+            },
+            {
+                "command": "jira-time-tracker.manual-commit-log",
+                "title": "Manual Commit Time Log"
+            },
+            {
+                "command": "jira-time-tracker.debug-branch-info",
+                "title": "Debug: Show Current Branch Info"
+            },
+            {
+                "command": "jira-time-tracker.force-git-activation",
+                "title": "Debug: Force Git Extension Activation"
+            },
+            {
+                "command": "jira-time-tracker.check-git-status",
+                "title": "Debug: Check Git Repository Status"
+            },
+            {
+                "command": "jira-time-tracker.refresh-git-repos",
+                "title": "Debug: Refresh Git Repositories"
+            },
+            {
+                "command": "jira-time-tracker.debug-file-watchers",
+                "title": "Debug: Check File Watchers"
+            },
+            {
+                "command": "jira-time-tracker.debug-head-files",
+                "title": "Debug: Read HEAD Files"
+            },
+            {
+                "command": "jira-time-tracker.debug-trigger-head-change",
+                "title": "Debug: Trigger HEAD File Change Handler"
             }
         ],
         "configuration": {

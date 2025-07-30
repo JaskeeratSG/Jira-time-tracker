@@ -2,7 +2,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TimeTrackerSidebarProvider = void 0;
 const vscode = require("vscode");
-const GitService_1 = require("../services/GitService");
 const AuthenticationService_1 = require("../services/AuthenticationService");
 const UIComponents_1 = require("./components/UIComponents");
 class TimeTrackerSidebarProvider {
@@ -327,9 +326,9 @@ class TimeTrackerSidebarProvider {
         try {
             this._outputChannel.appendLine('Loading branch info...');
             const branchInfo = await this._timeLogger.getBranchTicketInfo();
-            // Get Git email
-            const gitService = new GitService_1.GitService();
-            const gitEmail = await gitService.getUserEmail();
+            // Note: GitService now requires JiraService and outputChannel
+            // This functionality is deprecated in favor of BranchChangeService
+            const gitEmail = '';
             // Send Git email to webview
             this._view?.webview.postMessage({
                 type: 'git-email',

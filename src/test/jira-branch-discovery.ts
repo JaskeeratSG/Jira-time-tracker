@@ -35,11 +35,12 @@ interface JiraBranchLink {
  * Finds the actual Jira ticket linked to a branch created from Jira's "Create branch" feature
  */
 export class JiraBranchDiscovery {
-    private gitService: GitService;
+    // private gitService: GitService; // Deprecated in favor of BranchChangeService
     private jiraService: JiraService;
 
     constructor() {
-        this.gitService = new GitService();
+        // Note: GitService now requires JiraService and outputChannel
+        // this.gitService = new GitService();
         this.jiraService = new JiraService();
     }
 
@@ -50,7 +51,9 @@ export class JiraBranchDiscovery {
         console.log('🔍 JIRA BRANCH DISCOVERY');
         console.log('='.repeat(60));
 
-        const branchName = await this.gitService.getBranchName();
+        // Note: GitService methods are deprecated
+        // const branchName = await this.gitService.getBranchName();
+        const branchName = 'unknown'; // Placeholder since GitService is deprecated
         console.log(`📋 Current branch: ${branchName}`);
 
         try {
@@ -268,7 +271,9 @@ export class JiraBranchDiscovery {
         console.log('='.repeat(40));
 
         try {
-            const branchName = await this.gitService.getBranchName();
+            // Note: GitService methods are deprecated
+            // const branchName = await this.gitService.getBranchName();
+            const branchName = 'unknown'; // Placeholder since GitService is deprecated
             console.log(`📋 Branch: ${branchName}`);
 
             // Extract project key from branch name

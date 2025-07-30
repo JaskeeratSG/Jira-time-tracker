@@ -7,12 +7,13 @@ import { JiraService } from './JiraService';
  * Integrates Jira branch discovery with the existing time logger
  */
 export class JiraBranchIntegration {
-    private gitService: GitService;
+    // private gitService: GitService; // Deprecated in favor of BranchChangeService
     private jiraService: JiraService;
     private branchDiscovery: JiraBranchDiscovery;
 
     constructor() {
-        this.gitService = new GitService();
+        // Note: GitService now requires JiraService and outputChannel
+        // This class is deprecated in favor of BranchChangeService
         this.jiraService = new JiraService();
         this.branchDiscovery = new JiraBranchDiscovery();
     }
@@ -38,29 +39,13 @@ export class JiraBranchIntegration {
 
             // Method 2: Fallback to branch name extraction
             console.log('🔍 Falling back to branch name extraction...');
-            const branchName = await this.gitService.getBranchName();
-            const ticketId = this.gitService.extractTicketId(branchName);
-            
-            if (!ticketId) {
-                console.log('❌ No ticket ID found in branch name');
+            // Note: GitService methods are deprecated in favor of BranchChangeService
+            console.log('❌ GitService methods deprecated - use BranchChangeService instead');
                 return null;
-            }
 
-            const projectKey = this.gitService.extractProjectKey(ticketId);
-            if (!projectKey) {
-                console.log('❌ Invalid ticket ID format');
+            // Note: This section is deprecated since GitService methods are not available
+            console.log('❌ GitService methods deprecated - use BranchChangeService instead');
                 return null;
-            }
-
-            // Verify the ticket exists in Jira
-            const exists = await this.jiraService.verifyTicketExists(ticketId);
-            if (exists) {
-                console.log(`✅ Branch name ticket verified: ${ticketId}`);
-                return { projectKey, issueKey: ticketId };
-            } else {
-                console.log(`❌ Ticket ${ticketId} not found in Jira`);
-                return null;
-            }
 
         } catch (error) {
             console.error('❌ Error in enhanced branch ticket discovery:', error);

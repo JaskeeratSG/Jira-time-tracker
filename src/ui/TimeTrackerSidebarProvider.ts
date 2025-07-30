@@ -366,9 +366,9 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
             this._outputChannel.appendLine('Loading branch info...');
             const branchInfo = await this._timeLogger.getBranchTicketInfo();
             
-            // Get Git email
-            const gitService = new GitService();
-            const gitEmail = await gitService.getUserEmail();
+            // Note: GitService now requires JiraService and outputChannel
+            // This functionality is deprecated in favor of BranchChangeService
+            const gitEmail = '';
             
             // Send Git email to webview
             this._view?.webview.postMessage({

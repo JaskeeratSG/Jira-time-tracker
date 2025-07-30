@@ -2,7 +2,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.JiraBranchIntegration = void 0;
 const jira_branch_discovery_1 = require("../test/jira-branch-discovery");
-const GitService_1 = require("./GitService");
 const JiraService_1 = require("./JiraService");
 /**
  * Enhanced Jira Branch Integration
@@ -10,7 +9,8 @@ const JiraService_1 = require("./JiraService");
  */
 class JiraBranchIntegration {
     constructor() {
-        this.gitService = new GitService_1.GitService();
+        // Note: GitService now requires JiraService and outputChannel
+        // This class is deprecated in favor of BranchChangeService
         this.jiraService = new JiraService_1.JiraService();
         this.branchDiscovery = new jira_branch_discovery_1.JiraBranchDiscovery();
     }
@@ -32,27 +32,12 @@ class JiraBranchIntegration {
             }
             // Method 2: Fallback to branch name extraction
             console.log('🔍 Falling back to branch name extraction...');
-            const branchName = await this.gitService.getBranchName();
-            const ticketId = this.gitService.extractTicketId(branchName);
-            if (!ticketId) {
-                console.log('❌ No ticket ID found in branch name');
-                return null;
-            }
-            const projectKey = this.gitService.extractProjectKey(ticketId);
-            if (!projectKey) {
-                console.log('❌ Invalid ticket ID format');
-                return null;
-            }
-            // Verify the ticket exists in Jira
-            const exists = await this.jiraService.verifyTicketExists(ticketId);
-            if (exists) {
-                console.log(`✅ Branch name ticket verified: ${ticketId}`);
-                return { projectKey, issueKey: ticketId };
-            }
-            else {
-                console.log(`❌ Ticket ${ticketId} not found in Jira`);
-                return null;
-            }
+            // Note: GitService methods are deprecated in favor of BranchChangeService
+            console.log('❌ GitService methods deprecated - use BranchChangeService instead');
+            return null;
+            // Note: This section is deprecated since GitService methods are not available
+            console.log('❌ GitService methods deprecated - use BranchChangeService instead');
+            return null;
         }
         catch (error) {
             console.error('❌ Error in enhanced branch ticket discovery:', error);

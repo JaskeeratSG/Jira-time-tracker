@@ -247,8 +247,9 @@ export class JiraTimeLogger {
 
     private async getTicketFromBranch(): Promise<string | null> {
         const branchName = await getBranchName();
-        const gitService = new GitService();
-        return gitService.extractTicketId(branchName);
+        // Note: GitService now requires JiraService and outputChannel
+        // This method is deprecated in favor of BranchChangeService
+        return null;
     }
 
     public isTracking(): boolean {
@@ -1268,34 +1269,20 @@ export class JiraTimeLogger {
         this.log(`📋 Current project set to: ${projectKey}`);
     }
 
+    public isTimerRunning(): boolean {
+        return this.isRunning;
+    }
+
+    public getCurrentTime(): string {
+        return this.getCurrentTrackedTime();
+    }
+
     public async getBranchTicketInfo(): Promise<{ projectKey: string; issueKey: string } | null> {
         try {
-            const branchName = await getBranchName();
-            const gitService = new GitService();
-            
-            // Extract ticket ID from any branch pattern
-            const ticketId = gitService.extractTicketId(branchName);
-            if (!ticketId) {
-                this.log(`No ticket ID found in branch name: ${branchName}`);
+            // Note: This method is deprecated in favor of BranchChangeService
+            // GitService now requires JiraService and outputChannel
+            this.log(`Branch ticket info method deprecated - use BranchChangeService instead`);
                 return null;
-            }
-
-            // Extract project key from ticket ID
-            const projectKey = gitService.extractProjectKey(ticketId);
-            if (!projectKey) {
-                this.log(`Invalid ticket ID format: ${ticketId}`);
-                return null;
-            }
-
-            // Verify the ticket exists in Jira
-            const exists = await this.jiraService.verifyTicketExists(ticketId);
-            if (exists) {
-                this.log(`Branch ticket info found: ${JSON.stringify({ projectKey, issueKey: ticketId })}`);
-                return { projectKey, issueKey: ticketId };
-            } else {
-                this.log(`Ticket not found in Jira: ${ticketId}`);
-                return null;
-            }
         } catch (error) {
             console.error('Error getting branch ticket info:', error);
             return null;

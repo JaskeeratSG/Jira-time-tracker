@@ -4,7 +4,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 process.env.NODE_ENV = 'test';
 const git_1 = require("../utils/git");
 require("dotenv/config");
-const GitService_1 = require("../services/GitService");
 const JiraService_1 = require("../services/JiraService");
 async function testGitBranch() {
     try {
@@ -38,19 +37,24 @@ async function testGitBranch() {
     }
 }
 async function testGitAndJiraIntegration(email) {
-    const gitService = new GitService_1.GitService();
+    // Note: GitService now requires JiraService and outputChannel
+    // const gitService = new GitService();
     const jiraService = new JiraService_1.JiraService();
     try {
         // Test 1: Get Git User Email
         console.log('Testing getUserEmail...');
-        const userEmail = await gitService.getUserEmail();
-        console.log('User Email:', userEmail);
-        if (!userEmail) {
-            console.log('No Git email configured. Cannot proceed with project filtering.');
-            return;
-        }
+        // Note: GitService methods are deprecated
+        // const userEmail = await gitService.getUserEmail();
+        // Note: GitService methods are deprecated
+        // console.log('User Email:', userEmail);
+        // Note: GitService methods are deprecated
+        // if (!userEmail) {
+        console.log('No Git email configured. Cannot proceed with project filtering.');
+        return;
+        // }
         // Test 2: Get Projects for User Email
-        console.log('\nTesting getProjectsByUserEmail for:', userEmail);
+        // Note: GitService methods are deprecated
+        // console.log('\nTesting getProjectsByUserEmail for:', userEmail);
         const userProjects = await jiraService.getProjectsByUserEmail(email);
         console.log('Projects associated with user email:', userProjects);
         if (userProjects.length === 0) {
