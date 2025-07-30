@@ -32,20 +32,19 @@ class BranchChangeService {
     async handleBranchChange(event) {
         this.outputChannel.appendLine(`🔄 Processing branch change: ${event.oldBranch} → ${event.newBranch}`);
         try {
-            // Find linked Jira ticket for the new branch
+            this.outputChannel.appendLine(`🔍 [DEBUG] Entering findLinkedTicketForBranch for branch: ${event.newBranch}`);
             const ticketInfo = await this.findLinkedTicketForBranch(event.newBranch, event.workspacePath);
+            this.outputChannel.appendLine(`🔍 [DEBUG] findLinkedTicketForBranch result: ${JSON.stringify(ticketInfo)}`);
             if (ticketInfo) {
                 this.outputChannel.appendLine(`✅ Found linked ticket: ${ticketInfo.ticketId} (${ticketInfo.projectKey})`);
-                // Update state
                 this.autoTimerState.lastBranchInfo = {
                     branch: event.newBranch,
                     ticketId: ticketInfo.ticketId,
                     projectKey: ticketInfo.projectKey
                 };
                 this.saveAutoTimerState();
-                // Auto-populate UI
+                this.outputChannel.appendLine(`📝 [DEBUG] Starting auto-populate for ticket: ${ticketInfo.ticketId}`);
                 await this.autoPopulateTicketInfo(ticketInfo);
-                // Auto-start timer if enabled
                 if (this.autoTimerState.autoStart) {
                     await this.autoStartTimer(ticketInfo);
                 }
@@ -59,25 +58,18 @@ class BranchChangeService {
         }
     }
     async findLinkedTicketForBranch(branchName, repoPath) {
-        // Try to find ticket using GitService
-        const ticketId = await this.gitService.findLinkedJiraTicket(branchName, repoPath);
-        if (ticketId) {
-            // Extract project key from ticket ID
-            const projectKey = this.extractProjectKey(ticketId);
-            if (projectKey) {
-                return {
-                    ticketId,
-                    projectKey,
-                    summary: `Work on ${ticketId}`,
-                    description: `Time logged for branch: ${branchName}`
-                };
-            }
+        this.outputChannel.appendLine(`🔍 [DEBUG] findLinkedTicketForBranch called with branchName: ${branchName}, repoPath: ${repoPath}`);
+        const ticketResult = await this.gitService.findLinkedJiraTicket(branchName, repoPath);
+        this.outputChannel.appendLine(`🔍 [DEBUG] gitService.findLinkedJiraTicket result: ${JSON.stringify(ticketResult)}`);
+        if (ticketResult) {
+            return {
+                ticketId: ticketResult.ticketId,
+                projectKey: ticketResult.projectKey,
+                summary: ticketResult.summary,
+                description: `Time logged for branch: ${branchName}`
+            };
         }
         return null;
-    }
-    extractProjectKey(ticketId) {
-        const match = ticketId.match(/^([A-Z]+)-\d+$/i);
-        return match ? match[1] : null;
     }
     async autoPopulateTicketInfo(ticketInfo) {
         try {
@@ -86,6 +78,10 @@ class BranchChangeService {
             this.timeLogger.setCurrentProject(ticketInfo.projectKey);
             this.timeLogger.setCurrentIssue(ticketInfo.ticketId);
             this.outputChannel.appendLine(`✅ UI populated with project: ${ticketInfo.projectKey}, issue: ${ticketInfo.ticketId}`);
+            // Notify UI about the auto-populated ticket
+            if (this.onTicketAutoPopulated) {
+                this.onTicketAutoPopulated(ticketInfo);
+            }
         }
         catch (error) {
             this.outputChannel.appendLine(`❌ Error auto-populating UI: ${error}`);

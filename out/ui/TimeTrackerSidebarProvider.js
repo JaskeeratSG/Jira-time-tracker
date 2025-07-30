@@ -13,6 +13,35 @@ class TimeTrackerSidebarProvider {
         this._outputChannel = vscode.window.createOutputChannel('Jira Time Tracker');
         this._outputChannel.appendLine('TimeTrackerSidebarProvider initialized');
     }
+    setBranchChangeService(branchChangeService) {
+        this._branchChangeService = branchChangeService;
+        this._setupBranchChangeMonitoring();
+    }
+    _setupBranchChangeMonitoring() {
+        if (!this._branchChangeService) {
+            this._outputChannel.appendLine('⚠️ BranchChangeService not available for monitoring');
+            return;
+        }
+        this._branchChangeService.onTicketAutoPopulated = (ticketInfo) => {
+            this._outputChannel.appendLine(`🎯 Auto-populated ticket received: ${ticketInfo.ticketId}`);
+            this._updateUIWithTicketInfo(ticketInfo);
+        };
+        this._outputChannel.appendLine('✅ Branch change monitoring set up');
+    }
+    _updateUIWithTicketInfo(ticketInfo) {
+        if (!this._view) {
+            this._outputChannel.appendLine('⚠️ Webview not available for UI update');
+            return;
+        }
+        this._outputChannel.appendLine(`📝 Updating UI with ticket: ${ticketInfo.ticketId} (${ticketInfo.projectKey})`);
+        // Send branch-info message to webview (same format as existing _loadBranchInfo)
+        this._view.webview.postMessage({
+            type: 'branch-info',
+            projectKey: ticketInfo.projectKey,
+            issueKey: ticketInfo.ticketId
+        });
+        this._showNotification(`Auto-populated ticket: ${ticketInfo.ticketId}`, 'info');
+    }
     resolveWebviewView(webviewView, context, _token) {
         try {
             this._view = webviewView;

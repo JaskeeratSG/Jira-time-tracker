@@ -326,6 +326,8 @@ function activate(context) {
         }));
         // Register the sidebar provider
         const sidebarProvider = new TimeTrackerSidebarProvider_1.TimeTrackerSidebarProvider(context.extensionUri, timeLogger, context);
+        // Connect BranchChangeService to the sidebar provider
+        sidebarProvider.setBranchChangeService(branchChangeService);
         context.subscriptions.push(vscode.window.registerWebviewViewProvider(TimeTrackerSidebarProvider_1.TimeTrackerSidebarProvider.viewType, sidebarProvider));
         // Register commands
         context.subscriptions.push(vscode.commands.registerCommand('jira-time-logger.startTimer', async () => {

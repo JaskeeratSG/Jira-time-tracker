@@ -3,6 +3,7 @@ import { JiraTimeLogger } from '../JiraTimeLogger';
 import { GitService } from '../services/GitService';
 import { AuthenticationService, AuthenticatedUser } from '../services/AuthenticationService';
 import { MainLayoutComponent } from './components/UIComponents';
+import { BranchChangeService, BranchTicketInfo } from '../services/BranchChangeService';
 
 interface Project {
     key: string;
@@ -20,6 +21,7 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
     private _timeLogger: JiraTimeLogger;
     private _outputChannel: vscode.OutputChannel;
     private _authService: AuthenticationService;
+    private _branchChangeService?: BranchChangeService;
 
     constructor(
         private readonly _extensionUri: vscode.Uri, 
@@ -30,6 +32,43 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
         this._authService = new AuthenticationService(_context);
         this._outputChannel = vscode.window.createOutputChannel('Jira Time Tracker');
         this._outputChannel.appendLine('TimeTrackerSidebarProvider initialized');
+    }
+
+    public setBranchChangeService(branchChangeService: BranchChangeService): void {
+        this._branchChangeService = branchChangeService;
+        this._setupBranchChangeMonitoring();
+    }
+
+    private _setupBranchChangeMonitoring(): void {
+        if (!this._branchChangeService) {
+            this._outputChannel.appendLine('⚠️ BranchChangeService not available for monitoring');
+            return;
+        }
+
+        this._branchChangeService.onTicketAutoPopulated = (ticketInfo: BranchTicketInfo) => {
+            this._outputChannel.appendLine(`🎯 Auto-populated ticket received: ${ticketInfo.ticketId}`);
+            this._updateUIWithTicketInfo(ticketInfo);
+        };
+
+        this._outputChannel.appendLine('✅ Branch change monitoring set up');
+    }
+
+    private _updateUIWithTicketInfo(ticketInfo: BranchTicketInfo): void {
+        if (!this._view) {
+            this._outputChannel.appendLine('⚠️ Webview not available for UI update');
+            return;
+        }
+
+        this._outputChannel.appendLine(`📝 Updating UI with ticket: ${ticketInfo.ticketId} (${ticketInfo.projectKey})`);
+
+        // Send branch-info message to webview (same format as existing _loadBranchInfo)
+        this._view.webview.postMessage({
+            type: 'branch-info',
+            projectKey: ticketInfo.projectKey,
+            issueKey: ticketInfo.ticketId
+        });
+
+        this._showNotification(`Auto-populated ticket: ${ticketInfo.ticketId}`, 'info');
     }
 
     public resolveWebviewView(
