@@ -308,7 +308,7 @@ export class GitService {
             
             this.outputChannel.appendLine(`🔍 [HEAD CHANGE] Last known branch: ${lastKnownBranch}, commit: ${lastKnownCommit}`);
             
-            // Check for branch change
+            // Check for branch change (including initial branch detection)
             if (lastKnownBranch && lastKnownBranch !== currentBranch) {
                 this.outputChannel.appendLine(`🔄 Branch changed in ${repoPath}: ${lastKnownBranch} → ${currentBranch}`);
                 const event: BranchChangeEvent = {
@@ -319,7 +319,32 @@ export class GitService {
                 };
                 this.lastKnownBranches.set(repoPath, currentBranch);
                 this.callbacks.forEach(callback => {
-                    try { callback(event); } catch (error) { this.outputChannel.appendLine(`Error in branch change callback: ${error}`); }
+                    try { 
+                        this.outputChannel.appendLine(`🔄 Notifying branch change callback...`);
+                        callback(event); 
+                    } catch (error) { 
+                        this.outputChannel.appendLine(`Error in branch change callback: ${error}`); 
+                    }
+                });
+            } else if (!lastKnownBranch && currentBranch !== 'unknown') {
+                // This is the initial branch detection - treat it as a branch change
+                this.outputChannel.appendLine(`🔄 Initial branch detected in ${repoPath}: ${currentBranch}`);
+                
+                const event: BranchChangeEvent = {
+                    workspacePath: repoPath,
+                    oldBranch: 'unknown',
+                    newBranch: currentBranch,
+                    timestamp: Date.now()
+                };
+                
+                this.lastKnownBranches.set(repoPath, currentBranch);
+                this.callbacks.forEach(callback => {
+                    try { 
+                        this.outputChannel.appendLine(`🔄 Notifying initial branch change callback...`);
+                        callback(event); 
+                    } catch (error) { 
+                        this.outputChannel.appendLine(`Error in initial branch change callback: ${error}`); 
+                    }
                 });
             }
             
@@ -329,11 +354,7 @@ export class GitService {
                 await this.checkForNewCommit(repoPath, currentBranch);
             }
             
-            // Initialize tracking if not previously tracked
-            if (!lastKnownBranch) {
-                this.lastKnownBranches.set(repoPath, currentBranch);
-                this.outputChannel.appendLine(`📝 Initialized branch tracking for ${repoPath}: ${currentBranch}`);
-            }
+            // Initialize commit tracking if not previously tracked
             if (!lastKnownCommit && currentCommit !== 'unknown') {
                 this.lastKnownCommits.set(repoPath, currentCommit);
                 this.outputChannel.appendLine(`📝 Initialized commit tracking for ${repoPath}: ${currentCommit}`);
@@ -510,7 +531,7 @@ export class GitService {
     }
     }
 
-    private handleRepositoryStateChange(repo: any): void {
+    public handleRepositoryStateChange(repo: any): void {
         const repoPath = repo.rootUri.fsPath;
         const newBranch = repo.state.head?.name || 'unknown';
         const newCommit = repo.state.head?.commit || 'unknown';
@@ -519,7 +540,7 @@ export class GitService {
 
         this.outputChannel.appendLine(`🔍 State change detected for ${repoPath}: branch=${lastKnownBranch || 'none'} → ${newBranch}, commit=${lastKnownCommit || 'none'} → ${newCommit}`);
 
-        // Check for branch change
+        // Check for branch change (including initial branch detection)
         if (lastKnownBranch && lastKnownBranch !== newBranch) {
             this.outputChannel.appendLine(`🔄 Branch changed in ${repoPath}: ${lastKnownBranch} → ${newBranch}`);
             
@@ -537,9 +558,34 @@ export class GitService {
             // Notify callbacks
             this.callbacks.forEach(callback => {
                 try {
+                    this.outputChannel.appendLine(`🔄 Notifying branch change callback...`);
                     callback(event);
                 } catch (error) {
                     this.outputChannel.appendLine(`Error in branch change callback: ${error}`);
+                }
+            });
+        } else if (!lastKnownBranch && newBranch !== 'unknown') {
+            // This is the initial branch detection - treat it as a branch change
+            this.outputChannel.appendLine(`🔄 Initial branch detected in ${repoPath}: ${newBranch}`);
+            
+            const event: BranchChangeEvent = {
+                workspacePath: repoPath,
+                oldBranch: 'unknown',
+                newBranch: newBranch,
+                timestamp: Date.now(),
+                repository: repo
+            };
+
+            // Update the last known branch
+            this.lastKnownBranches.set(repoPath, newBranch);
+
+            // Notify callbacks
+            this.callbacks.forEach(callback => {
+                try {
+                    this.outputChannel.appendLine(`🔄 Notifying initial branch change callback...`);
+                    callback(event);
+                } catch (error) {
+                    this.outputChannel.appendLine(`Error in initial branch change callback: ${error}`);
                 }
             });
         }
@@ -575,11 +621,7 @@ export class GitService {
             });
         }
 
-        // Initialize tracking if not previously tracked
-        if (!lastKnownBranch) {
-            this.lastKnownBranches.set(repoPath, newBranch);
-            this.outputChannel.appendLine(`📝 Initialized branch tracking for ${repoPath}: ${newBranch}`);
-        }
+        // Initialize commit tracking if not previously tracked
         if (!lastKnownCommit && newCommit !== 'unknown') {
             this.lastKnownCommits.set(repoPath, newCommit);
             this.outputChannel.appendLine(`📝 Initialized commit tracking for ${repoPath}: ${newCommit.substring(0, 8)}`);
@@ -701,6 +743,8 @@ export class GitService {
     }
 
     private extractJiraTicketKey(branchName: string): string | null {
+        this.outputChannel.appendLine(`🔍 Extracting Jira ticket key from branch: "${branchName}"`);
+        
         // Common patterns for Jira ticket keys in branch names
         const patterns = [
             /([A-Z]+-\d+)/, // Basic pattern: PROJECT-123
@@ -710,18 +754,33 @@ export class GitService {
             /(?:task|story|bug)\/([A-Z]+-\d+)/i // task/PROJECT-123
         ];
 
-        for (const pattern of patterns) {
+        for (let i = 0; i < patterns.length; i++) {
+            const pattern = patterns[i];
             const match = branchName.match(pattern);
             if (match) {
+                this.outputChannel.appendLine(`✅ Pattern ${i + 1} matched: "${match[1]}" from branch "${branchName}"`);
                 return match[1]; // Return the captured ticket key
+            } else {
+                this.outputChannel.appendLine(`❌ Pattern ${i + 1} did not match: ${pattern}`);
             }
         }
 
+        this.outputChannel.appendLine(`❌ No patterns matched for branch: "${branchName}"`);
         return null;
     }
 
     private async fetchTicketDetails(ticketKey: string): Promise<any> {
+        this.outputChannel.appendLine(`🔍 Fetching ticket details for: ${ticketKey}`);
+        
         const credentials = await this.jiraService.getCurrentCredentials();
+        
+        if (!credentials) {
+            this.outputChannel.appendLine(`❌ No Jira credentials found`);
+            throw new Error('No Jira credentials configured');
+        }
+        
+        this.outputChannel.appendLine(`🔍 Using Jira base URL: ${credentials.baseUrl}`);
+        this.outputChannel.appendLine(`🔍 Using email: ${credentials.email}`);
         
         try {
             const response = await axios.get(
@@ -738,11 +797,13 @@ export class GitService {
             );
 
             if (response.status === 200) {
+                this.outputChannel.appendLine(`✅ Successfully fetched ticket: ${ticketKey}`);
                 return response.data;
             } else {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
         } catch (error: any) {
+            this.outputChannel.appendLine(`❌ Error fetching ticket ${ticketKey}: ${error.message}`);
             if (error.response?.status === 404) {
                 throw new Error(`Ticket ${ticketKey} not found in Jira`);
             } else if (error.response?.status === 401) {
