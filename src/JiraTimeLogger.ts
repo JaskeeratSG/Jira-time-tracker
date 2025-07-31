@@ -3,6 +3,7 @@ import { JiraService } from './services/JiraService';
 import { AuthenticationService } from './services/AuthenticationService';
 import { GitService } from './services/GitService';
 import { getBranchName } from './utils/git';
+import { createOutputChannel } from './utils/outputChannel';
 
 export class JiraTimeLogger {
     private timer: NodeJS.Timeout | null = null;
@@ -18,7 +19,7 @@ export class JiraTimeLogger {
     constructor() {
         this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
         this.jiraService = new JiraService();
-        this.outputChannel = vscode.window.createOutputChannel('Jira Time Tracker - Productive Integration');
+        this.outputChannel = vscode.window.createOutputChannel('Jira Time Tracker');
         this.updateStatusBar();
     }
 
@@ -26,22 +27,15 @@ export class JiraTimeLogger {
      * Log message to both console and VS Code output channel
      */
     private log(message: string, showOutput: boolean = false): void {
-        console.log(message);
-        this.outputChannel.appendLine(message);
-        if (showOutput) {
-            this.outputChannel.show(true);
-        }
+        // Completely silent - no console.log, no output channel
+        // this.loggingService.log(message, showOutput);
     }
 
     /**
      * Show the output channel for debugging Productive integration
      */
     private showProductiveOutput(): void {
-        this.outputChannel.appendLine('\n🔍 PRODUCTIVE INTEGRATION DEBUG OUTPUT');
-        this.outputChannel.appendLine('═'.repeat(50));
-        this.outputChannel.appendLine('Watch this output to see detailed Productive integration progress...');
-        this.outputChannel.appendLine('═'.repeat(50));
-        this.outputChannel.show(true);
+        // Removed Productive integration debug output
     }
 
     updateJiraService(authService: AuthenticationService) {
@@ -106,17 +100,20 @@ export class JiraTimeLogger {
                 this.log(`\n📊 Starting dual time logging (Jira + Productive)...`);
                 // Use the enhanced logTime method that includes Productive integration
                 await this.logTime(ticketId, timeSpent, `Time logged via VS Code extension`);
-                vscode.window.showInformationMessage(`Time logged successfully: ${timeSpent} minutes to ${ticketId}`);
+                
+                // Show time logged notification
+                vscode.window.showInformationMessage(`✅ Time logged: ${timeSpent} minutes to ${ticketId}`);
+                
                 this.resetTimer();
                 this.currentIssue = null;
                 this.log(`✅ Dual time logging completed successfully`);
             } catch (error:any) {
                 this.log(`❌ Dual time logging failed: ${error.message}`);
-                vscode.window.showErrorMessage(`Failed to log time: ${error.message}`);
+                vscode.window.showErrorMessage(`❌ Failed to log time: ${error.message}`);
             }
         } else {
             this.log(`❌ No ticket ID found for time logging`);
-            vscode.window.showErrorMessage('No JIRA ticket selected for time logging');
+            vscode.window.showErrorMessage('❌ No JIRA ticket selected for time logging');
         }
     }
 

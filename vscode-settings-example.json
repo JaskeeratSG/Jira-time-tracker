@@ -1,17 +1,11 @@
 {
-  "jiraTimeTracker.baseUrl": "https://jkchhabra99.atlassian.net",
-  "jiraTimeTracker.email": "YOUR_JIRA_EMAIL",
-  "jiraTimeTracker.apiToken": "YOUR_JIRA_API_TOKEN",
-  
-  "jiraTimeTracker.productive.organizationId": "42335",
-  "jiraTimeTracker.productive.apiToken": "e77e94a9-f882-4ee2-8efe-db82dbe00750",
-  "jiraTimeTracker.productive.baseUrl": "https://api.productive.io/api/v2",
-  "jiraTimeTracker.productive.personId": "934317",
-  "jiraTimeTracker.productive.defaultProjectId": "667206",
-  "jiraTimeTracker.productive.defaultServiceId": "9231369",
-  "jiraTimeTracker.productive.projectMapping": {
-    "SCRUM": "667206",
-    "CTL": "667206",
-    "DEV": "667206"
-  }
+    "jiraTimeTracker.jiraUrl": "https://your-domain.atlassian.net",
+    "jiraTimeTracker.jiraUsername": "your-email@example.com",
+    "jiraTimeTracker.jiraApiToken": "your-jira-api-token",
+    "jiraTimeTracker.productiveApiToken": "your-productive-api-token",
+    "jiraTimeTracker.productiveCompanyId": "your-productive-company-id",
+    "jiraTimeTracker.productiveUserId": "your-productive-user-id",
+    "jiraTimeTracker.autoTimer": true,
+    "jiraTimeTracker.autoLogging": false,
+    "jiraTimeTracker.enableOutputChannels": false
 } 

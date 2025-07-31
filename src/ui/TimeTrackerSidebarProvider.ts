@@ -4,6 +4,7 @@ import { GitService } from '../services/GitService';
 import { AuthenticationService, AuthenticatedUser } from '../services/AuthenticationService';
 import { MainLayoutComponent } from './components/UIComponents';
 import { BranchChangeService, BranchTicketInfo } from '../services/BranchChangeService';
+import { createOutputChannel } from '../utils/outputChannel';
 
 interface Project {
     key: string;
@@ -30,8 +31,8 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
     ) {
         this._timeLogger = timeLogger;
         this._authService = new AuthenticationService(_context);
-        this._outputChannel = vscode.window.createOutputChannel('Jira Time Tracker');
-        this._outputChannel.appendLine('TimeTrackerSidebarProvider initialized');
+        this._outputChannel = createOutputChannel('Jira Time Tracker');
+        // Removed initialization message
     }
 
     public setBranchChangeService(branchChangeService: BranchChangeService): void {
@@ -54,21 +55,17 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
     }
 
     private _updateUIWithTicketInfo(ticketInfo: BranchTicketInfo): void {
-        if (!this._view) {
-            this._outputChannel.appendLine('⚠️ Webview not available for UI update');
-            return;
-        }
-
+        this._outputChannel.appendLine(`🎯 Auto-populated ticket received: ${ticketInfo.ticketId}`);
         this._outputChannel.appendLine(`📝 Updating UI with ticket: ${ticketInfo.ticketId} (${ticketInfo.projectKey})`);
-
+        
         // Send branch-info message to webview (same format as existing _loadBranchInfo)
-        this._view.webview.postMessage({
+        this._view?.webview.postMessage({
             type: 'branch-info',
             projectKey: ticketInfo.projectKey,
             issueKey: ticketInfo.ticketId
         });
-
-        this._showNotification(`Auto-populated ticket: ${ticketInfo.ticketId}`, 'info');
+        
+        // Removed auto-populated ticket notification
     }
 
     public resolveWebviewView(
@@ -144,21 +141,15 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
                                 this._outputChannel.appendLine('Calling getProjectsByUserEmail...');
                                 const projects = await this._timeLogger.jiraService.getProjectsByUserEmail(email);
                                 this._outputChannel.appendLine('Projects loaded successfully: ' + JSON.stringify(projects, null, 2));
+                                this._outputChannel.appendLine('Found ' + projects.length + ' projects for user');
                                 
                                 // Send projects to webview
-                                this._outputChannel.appendLine('Sending projects to webview...');
                                 this._view?.webview.postMessage({
                                     type: 'projects',
                                     projects: projects
                                 });
                                 
-                                if (projects.length === 0) {
-                                    this._outputChannel.appendLine('No projects found for user');
-                                    this._showNotification('No projects assigned to this user', 'error');
-                                } else {
-                                    this._outputChannel.appendLine(`Found ${projects.length} projects for user`);
-                                    this._showNotification(`Projects loaded for ${email}`, 'success');
-                                }
+                                // Removed project loaded notification
                             } catch (error: any) {
                                 this._outputChannel.appendLine('Failed to load projects: ' + error.message);
                                 if (error.response) {
@@ -186,7 +177,7 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
                                 issues: []
                             });
                             
-                            this._showNotification(`Project ${data.projectKey} loaded. Use smart search to find issues.`, 'info');
+                            // Removed project loaded notification
                             break;
                         case 'searchIssues':
                             this._outputChannel.appendLine(`Searching issues for project: ${data.projectKey}, term: "${data.searchTerm}"`);
@@ -221,7 +212,7 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
                                     return;
                                 }
                                 await this._timeLogger.logTime(data.issueKey, data.timeSpent);
-                                this._showNotification(`Successfully logged ${data.timeSpent} minutes to ${data.issueKey}`, 'success');
+                                // Removed manual time log success notification
                                 
                                 // Clear the input field and reset button on success
                                 this._view?.webview.postMessage({
@@ -247,7 +238,6 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
                                         projectKey: branchInfo.projectKey,
                                         issueKey: branchInfo.issueKey
                                     });
-                                    this._showNotification(`Loaded ticket from branch: ${branchInfo.issueKey}`, 'info');
                                 }
                             } catch (error: any) {
                                 this._outputChannel.appendLine('Error loading branch info: ' + error.message);

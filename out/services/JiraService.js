@@ -256,7 +256,6 @@ class JiraService {
                 hasMore = response.issues.length === maxResults;
                 startAt += maxResults;
             }
-            console.log(`Loaded ${allIssues.length} total issues for project ${projectKey}`);
             return allIssues;
         }
         catch (error) {
@@ -341,17 +340,13 @@ class JiraService {
         try {
             // First get all projects
             const allProjects = await this.getProjects();
-            console.log('All projects loaded:', allProjects);
             // Then filter projects where the user has issues assigned
             const jql = `assignee = "${email}" ORDER BY updated DESC`;
             const response = await this._makeRequest(`/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=project`, credentials);
-            console.log('User issues response:', response);
             // Get unique project keys from the issues
             const projectKeys = new Set(response.issues.map((issue) => issue.fields.project.key));
-            console.log('Project keys found:', Array.from(projectKeys));
             // Filter the original projects list to only include projects where the user has issues
             const filteredProjects = allProjects.filter(project => projectKeys.has(project.key));
-            console.log('Filtered projects:', filteredProjects);
             return filteredProjects;
         }
         catch (error) {

@@ -203,6 +203,9 @@ export class BranchChangeService {
             );
             this.outputChannel.appendLine('✅ Time logged successfully for commit');
             
+            // Show commit time logged notification
+            vscode.window.showInformationMessage(`✅ Time logged for commit: ${elapsedMinutes} minutes to ${ticketInfo.ticketId}`);
+            
             // Reset the timer after successful logging
             this.timeLogger.stopTimer();
             this.timeLogger.resetTimer();

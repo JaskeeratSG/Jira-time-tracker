@@ -4,6 +4,7 @@ import { AuthenticationService } from './services/AuthenticationService';
 import { TimeTrackerSidebarProvider } from './ui/TimeTrackerSidebarProvider';
 import { BranchChangeService } from './services/BranchChangeService';
 import { GitService, CommitEvent } from './services/GitService';
+import { createOutputChannel } from './utils/outputChannel';
 
 let outputChannel: vscode.OutputChannel;
 
@@ -368,9 +369,9 @@ async function runBranchDetectionPOC() {
 export function activate(context: vscode.ExtensionContext) {
     try {
         // Create output channel
-        outputChannel = vscode.window.createOutputChannel('Jira Time Tracker');
+        outputChannel = createOutputChannel('Jira Time Tracker');
         outputChannel.appendLine('Jira Time Tracker extension activated');
-        outputChannel.show(true); // Force show the output channel
+        // Removed outputChannel.show(true) to prevent extension host issues
         
         const timeLogger = new JiraTimeLogger();
         outputChannel.appendLine('JiraTimeLogger instance created');
@@ -378,11 +379,13 @@ export function activate(context: vscode.ExtensionContext) {
         // Initialize Branch Change Service
         const branchChangeService = new BranchChangeService(timeLogger, context, outputChannel);
         
-        // Auto-initialize branch detection on extension activation
+        // Auto-initialize branch detection on extension activation with error handling
         branchChangeService.initialize().then(() => {
             outputChannel.appendLine('✅ Branch detection auto-initialized successfully');
         }).catch((error) => {
             outputChannel.appendLine(`❌ Error auto-initializing branch detection: ${error}`);
+            // Don't crash the extension host on initialization errors
+            console.error('Branch detection initialization failed:', error);
         });
         
         context.subscriptions.push(
@@ -420,7 +423,7 @@ export function activate(context: vscode.ExtensionContext) {
                 try {
                     await timeLogger.startTimer();
                     outputChannel.appendLine('Timer started');
-                    vscode.window.showInformationMessage('Timer started!');
+                    // Removed success notification
                 } catch (error) {
                     outputChannel.appendLine(`Error starting timer: ${error}`);
                     vscode.window.showErrorMessage(`Failed to start timer: ${error}`);
@@ -433,7 +436,7 @@ export function activate(context: vscode.ExtensionContext) {
                 try {
                     await timeLogger.stopTimer();
                     outputChannel.appendLine('Timer stopped');
-                    vscode.window.showInformationMessage('Timer stopped!');
+                    // Removed success notification
                 } catch (error) {
                     outputChannel.appendLine(`Error stopping timer: ${error}`);
                     vscode.window.showErrorMessage(`Failed to stop timer: ${error}`);
@@ -446,7 +449,7 @@ export function activate(context: vscode.ExtensionContext) {
                 try {
                     await timeLogger.resumeTimer();
                     outputChannel.appendLine('Timer resumed');
-                    vscode.window.showInformationMessage('Timer resumed!');
+                    // Removed success notification
                 } catch (error) {
                     outputChannel.appendLine(`Error resuming timer: ${error}`);
                     vscode.window.showErrorMessage(`Failed to resume timer: ${error}`);
@@ -459,7 +462,7 @@ export function activate(context: vscode.ExtensionContext) {
                 try {
                     await timeLogger.finishAndLog();
                     outputChannel.appendLine('Time logged successfully');
-                    vscode.window.showInformationMessage('Time logged successfully!');
+                    // Removed success notification
                 } catch (error) {
                     outputChannel.appendLine(`Error logging time: ${error}`);
                     vscode.window.showErrorMessage(`Failed to log time: ${error}`);
@@ -578,7 +581,7 @@ export function activate(context: vscode.ExtensionContext) {
                             timestamp: Date.now()
                         };
                         await branchChangeService.handleCommit(mockCommitEvent);
-                        vscode.window.showInformationMessage('Time logged for commit!');
+                        // Removed success notification
                     }
                 } catch (error) {
                     outputChannel.appendLine(`Error logging time for commit: ${error}`);
@@ -921,5 +924,12 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {
-    console.log('Extension deactivated');
+    try {
+        console.log('Extension deactivated');
+        if (outputChannel) {
+            outputChannel.appendLine('Extension deactivated');
+        }
+    } catch (error) {
+        console.error('Error during extension deactivation:', error);
+    }
 } 

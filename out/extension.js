@@ -5,6 +5,7 @@ const vscode = require("vscode");
 const JiraTimeLogger_1 = require("./JiraTimeLogger");
 const TimeTrackerSidebarProvider_1 = require("./ui/TimeTrackerSidebarProvider");
 const BranchChangeService_1 = require("./services/BranchChangeService");
+const outputChannel_1 = require("./utils/outputChannel");
 let outputChannel;
 // POC: Environment Detection
 async function runEnvironmentPOC() {
@@ -301,18 +302,20 @@ async function runBranchDetectionPOC() {
 function activate(context) {
     try {
         // Create output channel
-        outputChannel = vscode.window.createOutputChannel('Jira Time Tracker');
+        outputChannel = (0, outputChannel_1.createOutputChannel)('Jira Time Tracker');
         outputChannel.appendLine('Jira Time Tracker extension activated');
-        outputChannel.show(true); // Force show the output channel
+        // Removed outputChannel.show(true) to prevent extension host issues
         const timeLogger = new JiraTimeLogger_1.JiraTimeLogger();
         outputChannel.appendLine('JiraTimeLogger instance created');
         // Initialize Branch Change Service
         const branchChangeService = new BranchChangeService_1.BranchChangeService(timeLogger, context, outputChannel);
-        // Auto-initialize branch detection on extension activation
+        // Auto-initialize branch detection on extension activation with error handling
         branchChangeService.initialize().then(() => {
             outputChannel.appendLine('✅ Branch detection auto-initialized successfully');
         }).catch((error) => {
             outputChannel.appendLine(`❌ Error auto-initializing branch detection: ${error}`);
+            // Don't crash the extension host on initialization errors
+            console.error('Branch detection initialization failed:', error);
         });
         context.subscriptions.push(vscode.commands.registerCommand('jira-time-tracker.initialize-branch-detection', async () => {
             try {
@@ -334,7 +337,7 @@ function activate(context) {
             try {
                 await timeLogger.startTimer();
                 outputChannel.appendLine('Timer started');
-                vscode.window.showInformationMessage('Timer started!');
+                // Removed success notification
             }
             catch (error) {
                 outputChannel.appendLine(`Error starting timer: ${error}`);
@@ -345,7 +348,7 @@ function activate(context) {
             try {
                 await timeLogger.stopTimer();
                 outputChannel.appendLine('Timer stopped');
-                vscode.window.showInformationMessage('Timer stopped!');
+                // Removed success notification
             }
             catch (error) {
                 outputChannel.appendLine(`Error stopping timer: ${error}`);
@@ -356,7 +359,7 @@ function activate(context) {
             try {
                 await timeLogger.resumeTimer();
                 outputChannel.appendLine('Timer resumed');
-                vscode.window.showInformationMessage('Timer resumed!');
+                // Removed success notification
             }
             catch (error) {
                 outputChannel.appendLine(`Error resuming timer: ${error}`);
@@ -367,7 +370,7 @@ function activate(context) {
             try {
                 await timeLogger.finishAndLog();
                 outputChannel.appendLine('Time logged successfully');
-                vscode.window.showInformationMessage('Time logged successfully!');
+                // Removed success notification
             }
             catch (error) {
                 outputChannel.appendLine(`Error logging time: ${error}`);
@@ -466,7 +469,7 @@ function activate(context) {
                         timestamp: Date.now()
                     };
                     await branchChangeService.handleCommit(mockCommitEvent);
-                    vscode.window.showInformationMessage('Time logged for commit!');
+                    // Removed success notification
                 }
             }
             catch (error) {
@@ -778,7 +781,15 @@ function activate(context) {
 }
 exports.activate = activate;
 function deactivate() {
-    console.log('Extension deactivated');
+    try {
+        console.log('Extension deactivated');
+        if (outputChannel) {
+            outputChannel.appendLine('Extension deactivated');
+        }
+    }
+    catch (error) {
+        console.error('Error during extension deactivation:', error);
+    }
 }
 exports.deactivate = deactivate;
 //# sourceMappingURL=extension.js.map

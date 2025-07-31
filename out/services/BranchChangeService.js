@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BranchChangeService = void 0;
+const vscode = require("vscode");
 const GitService_1 = require("./GitService");
 const JiraService_1 = require("./JiraService");
 class BranchChangeService {
@@ -151,6 +152,8 @@ class BranchChangeService {
             // Log time using the commit message as description
             await this.timeLogger.logTime(ticketInfo.ticketId, elapsedMinutes, event.commitMessage);
             this.outputChannel.appendLine('✅ Time logged successfully for commit');
+            // Show commit time logged notification
+            vscode.window.showInformationMessage(`✅ Time logged for commit: ${elapsedMinutes} minutes to ${ticketInfo.ticketId}`);
             // Reset the timer after successful logging
             this.timeLogger.stopTimer();
             this.timeLogger.resetTimer();

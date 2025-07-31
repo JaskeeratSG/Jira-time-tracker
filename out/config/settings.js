@@ -30,9 +30,33 @@ const getConfiguration = () => {
     return vscode.workspace.getConfiguration('jiraTimeTracker');
 };
 exports.settings = {
-    jiraBaseUrl: getConfiguration().get('jiraBaseUrl'),
-    jiraEmail: getConfiguration().get('jiraEmail'),
-    jiraApiToken: getConfiguration().get('jiraApiToken'),
+    get jiraUrl() {
+        return getConfiguration().get('jiraUrl', '');
+    },
+    get jiraUsername() {
+        return getConfiguration().get('jiraUsername', '');
+    },
+    get jiraApiToken() {
+        return getConfiguration().get('jiraApiToken', '');
+    },
+    get productiveApiToken() {
+        return getConfiguration().get('productiveApiToken', '');
+    },
+    get productiveCompanyId() {
+        return getConfiguration().get('productiveCompanyId', '');
+    },
+    get productiveUserId() {
+        return getConfiguration().get('productiveUserId', '');
+    },
+    get autoTimer() {
+        return getConfiguration().get('autoTimer', false);
+    },
+    get autoLogging() {
+        return getConfiguration().get('autoLogging', false);
+    },
+    get enableOutputChannels() {
+        return getConfiguration().get('enableOutputChannels', false);
+    }
 };
 function getJiraConfig() {
     // First try to get from .env, fall back to VS Code settings if not found
