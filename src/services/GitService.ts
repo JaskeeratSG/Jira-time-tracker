@@ -246,20 +246,20 @@ export class GitService {
                 if (currentCommit && lastKnownCommit && currentCommit !== lastKnownCommit) {
                     this.outputChannel.appendLine(`🔍 [PERIODIC CHECK] New commit detected: ${currentCommit} (was: ${lastKnownCommit})`);
                     
-                    // Get commit message
-                    const commitMessage = await this.getCommitMessageFromFile(repoPath, currentCommit);
+                    // Get commit message using the simpler method
+                    const commitMessage = await this.getLastCommitMessage(repoPath);
                     const currentBranch = await this.getCurrentBranchFromFile(repoPath);
                     
-                    if (commitMessage && currentBranch) {
+                    if (currentBranch) {
                         const commitEvent: CommitEvent = {
                             workspacePath: repoPath,
                             branch: currentBranch,
                             commitHash: currentCommit,
-                            commitMessage: commitMessage,
+                            commitMessage: commitMessage || `Commit ${currentCommit.substring(0, 8)}`,
                             timestamp: Date.now()
                         };
                         
-                        this.outputChannel.appendLine(`📝 [PERIODIC CHECK] Triggering commit event: ${commitMessage}`);
+                        this.outputChannel.appendLine(`📝 [PERIODIC CHECK] Triggering commit event: ${commitEvent.commitMessage}`);
                         this.commitCallbacks.forEach(callback => callback(commitEvent));
                     }
                     
@@ -374,12 +374,12 @@ export class GitService {
 
             if (lastKnownCommit && lastKnownCommit !== currentCommit && currentCommit !== 'unknown') {
                 this.outputChannel.appendLine(`📝 New commit detected in ${repoPath}: ${lastKnownCommit} → ${currentCommit}`);
-                const commitMessage = await this.getCommitMessageFromFile(repoPath, currentCommit);
+                const commitMessage = await this.getLastCommitMessage(repoPath);
                 const event: CommitEvent = {
                     workspacePath: repoPath,
                     branch: currentBranch,
                     commitHash: currentCommit,
-                    commitMessage: commitMessage,
+                    commitMessage: commitMessage || `Commit ${currentCommit.substring(0, 8)}`,
                     timestamp: Date.now()
                 };
                 this.lastKnownCommits.set(repoPath, currentCommit);
@@ -964,7 +964,7 @@ export class GitService {
                 if (this.fileWatchers.has(repoPath)) {
                     const currentBranch = await this.getCurrentBranchFromFile(repoPath);
                     const currentCommit = await this.getCurrentCommitFromFile(repoPath);
-                    const commitMessage = await this.getCommitMessageFromFile(repoPath, currentCommit);
+                    const commitMessage = await this.getLastCommitMessage(repoPath);
                     
                     this.outputChannel.appendLine(`  Branch: ${currentBranch}, Commit: ${currentCommit.substring(0, 8)}`);
                     
@@ -972,7 +972,7 @@ export class GitService {
                         workspacePath: repoPath,
                         branch: currentBranch,
                         commitHash: currentCommit,
-                        commitMessage: commitMessage,
+                        commitMessage: commitMessage || `Commit ${currentCommit.substring(0, 8)}`,
                         timestamp: Date.now()
                     };
 
@@ -993,7 +993,7 @@ export class GitService {
                     this.outputChannel.appendLine(`📁 Triggering for: ${watchedRepoPath}`);
                     const currentBranch = await this.getCurrentBranchFromFile(watchedRepoPath);
                     const currentCommit = await this.getCurrentCommitFromFile(watchedRepoPath);
-                    const commitMessage = await this.getCommitMessageFromFile(watchedRepoPath, currentCommit);
+                    const commitMessage = await this.getLastCommitMessage(watchedRepoPath);
                     
                     this.outputChannel.appendLine(`  Branch: ${currentBranch}, Commit: ${currentCommit.substring(0, 8)}`);
                     
@@ -1001,7 +1001,7 @@ export class GitService {
                         workspacePath: watchedRepoPath,
                         branch: currentBranch,
                         commitHash: currentCommit,
-                        commitMessage: commitMessage,
+                        commitMessage: commitMessage || `Commit ${currentCommit.substring(0, 8)}`,
                         timestamp: Date.now()
                     };
 
@@ -1019,6 +1019,35 @@ export class GitService {
             this.outputChannel.appendLine('✅ Manual commit trigger completed');
         } catch (error) {
             this.outputChannel.appendLine(`❌ Error triggering commit: ${error}`);
+        }
+    }
+
+    /**
+     * Get the last commit message using git command
+     */
+    public async getLastCommitMessage(repoPath?: string): Promise<string | null> {
+        try {
+            const { exec } = require('child_process');
+            const { promisify } = require('util');
+            const execAsync = promisify(exec);
+            
+            // Use provided repoPath or get current workspace
+            const workingDir = repoPath || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (!workingDir) {
+                this.outputChannel.appendLine('❌ No workspace folder found for getting commit message');
+                return null;
+            }
+            
+            const { stdout } = await execAsync('git log -1 --pretty=format:"%s"', {
+                cwd: workingDir
+            });
+            
+            const commitMessage = stdout.trim();
+            this.outputChannel.appendLine(`📝 Last commit message: ${commitMessage}`);
+            return commitMessage || null;
+        } catch (error) {
+            this.outputChannel.appendLine(`❌ Error getting last commit message: ${error}`);
+            return null;
         }
     }
 } 
