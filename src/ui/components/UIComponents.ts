@@ -269,6 +269,7 @@ export class StylesComponent extends BaseComponent {
                     border: 1px solid var(--vscode-input-border);
                     border-radius: 4px;
                     box-sizing: border-box;
+                    display: none;
                 }
                 .manual-time input {
                     width: 100%;
@@ -287,7 +288,7 @@ export class StylesComponent extends BaseComponent {
                     background: var(--vscode-editor-inactiveSelectionBackground);
                     padding: 12px;
                     border-radius: 4px;
-                    box-sizing: border-box;
+                    display: none;
                 }
                 .section-title {
                     font-size: 14px;
@@ -818,12 +819,12 @@ export class TimerSectionComponent extends BaseComponent {
     render(): string {
         return `
             <div class="section">
-                <div class="section-title">Timer</div>
+                <!-- <div class="section-title">Timer</div> -->
+                <div class="status">
+                    <span id="statusText">Inactive</span>
+                    <span class="status-dot" id="statusDot"></span>
+                </div>
                 <div class="timer-section">
-                    <div class="status">
-                        <span class="status-dot" id="statusDot"></span>
-                        <span id="statusText">Inactive</span>
-                    </div>
                     <div class="timer" id="timeDisplay">00:00:00</div>
                     
                     <div class="button-row">
@@ -854,7 +855,7 @@ export class ManualTimeLogComponent extends BaseComponent {
     render(): string {
         return `
             <div class="section">
-                <div class="section-title">Manual Time Log</div>
+                <!-- <div class="section-title">Manual Time Log</div> -->
                 <div class="manual-time">
                     <input type="text" id="manualTimeInput" placeholder="Enter time (e.g., 5h, 30m, 1h 30m, 1.5h)">
                     <button class="button" onclick="submitManualTime()">Log Manual Time</button>
