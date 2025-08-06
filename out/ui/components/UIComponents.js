@@ -813,6 +813,16 @@ class StylesComponent extends BaseComponent {
                     font-size: 14px;
                 }
                 
+                .close-ticket-btn {
+                    background: var(--vscode-errorForeground) !important;
+                    color: var(--vscode-errorBackground) !important;
+                }
+                
+                .close-ticket-btn:hover {
+                    background: var(--vscode-errorForeground) !important;
+                    opacity: 0.8;
+                }
+                
                 /* Animation for ticket info appearance */
                 @keyframes slideDown {
                     from {
@@ -1045,6 +1055,10 @@ class TicketInfoComponent extends BaseComponent {
                     <button class="action-button" id="copyTicketKeyBtn" title="Copy Ticket Key">
                         <span class="action-icon">📋</span>
                         Copy Key
+                    </button>
+                    <button class="action-button close-ticket-btn" id="closeTicketBtn" title="Close Ticket Info" style="display: none;">
+                        <span class="action-icon">✕</span>
+                        Close
                     </button>
                 </div>
             </div>
@@ -1431,6 +1445,7 @@ class JavaScriptComponent extends BaseComponent {
                     const stopBtn = document.getElementById('stopBtn');
                     const resumeBtn = document.getElementById('resumeBtn');
                     const submitBtn = document.getElementById('submitBtn');
+                    const closeTicketBtn = document.getElementById('closeTicketBtn');
 
                     if (startBtn) startBtn.style.display = isTracking ? 'none' : 'inline-block';
                     if (stopBtn) stopBtn.style.display = isTracking ? 'inline-block' : 'none';
@@ -1440,6 +1455,11 @@ class JavaScriptComponent extends BaseComponent {
                     const hasElapsedTime = currentTime && currentTime !== '00:00:00';
                     const shouldShowSubmit = isTracking || hasElapsedTime;
                     if (submitBtn) submitBtn.style.display = shouldShowSubmit ? 'inline-block' : 'none';
+                    
+                    // Show close ticket button only when timer is inactive
+                    if (closeTicketBtn) {
+                        closeTicketBtn.style.display = isTracking ? 'none' : 'inline-block';
+                    }
                 }
 
                 // Project selection handler
@@ -1811,6 +1831,15 @@ class JavaScriptComponent extends BaseComponent {
                         // Set up action buttons
                         setupTicketActionButtons(ticketData);
                         
+                        // Show close button if timer is inactive
+                        const closeTicketBtn = document.getElementById('closeTicketBtn');
+                        if (closeTicketBtn) {
+                            // Check if timer is currently tracking
+                            const statusText = document.getElementById('statusText');
+                            const isTracking = statusText && statusText.textContent === 'Active';
+                            closeTicketBtn.style.display = isTracking ? 'none' : 'inline-block';
+                        }
+                        
                         console.log('Ticket info updated:', ticketData);
                     } else {
                         // Hide the ticket info section
@@ -1831,6 +1860,7 @@ class JavaScriptComponent extends BaseComponent {
                 function setupTicketActionButtons(ticketData) {
                     const openInJiraBtn = document.getElementById('openInJiraBtn');
                     const copyTicketKeyBtn = document.getElementById('copyTicketKeyBtn');
+                    const closeTicketBtn = document.getElementById('closeTicketBtn');
                     
                     if (openInJiraBtn) {
                         openInJiraBtn.onclick = () => {
@@ -1852,6 +1882,23 @@ class JavaScriptComponent extends BaseComponent {
                                     showNotification('Failed to copy ticket key', 'error');
                                 });
                             }
+                        };
+                    }
+                    
+                    if (closeTicketBtn) {
+                        closeTicketBtn.onclick = () => {
+                            // Hide the ticket info section
+                            const ticketInfoSection = document.getElementById('ticketInfo');
+                            if (ticketInfoSection) {
+                                ticketInfoSection.style.display = 'none';
+                                ticketInfoSection.classList.remove('show');
+                            }
+                            
+                            // Clear any existing show more/less buttons
+                            const existingShowButtons = document.querySelectorAll('.action-button[onclick*="Show"]');
+                            existingShowButtons.forEach(btn => btn.remove());
+                            
+                            showNotification('Ticket info closed', 'info');
                         };
                     }
                     
