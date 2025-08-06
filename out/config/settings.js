@@ -15,7 +15,6 @@ catch (e) {
 }
 const getConfiguration = () => {
     if (!vscode) {
-        // When running tests or outside VS Code
         return {
             get: (key) => {
                 switch (key) {

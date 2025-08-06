@@ -14,7 +14,6 @@ try {
 
 const getConfiguration = () => {
     if (!vscode) {
-        // When running tests or outside VS Code
         return {
             get: (key: string) => {
                 switch (key) {

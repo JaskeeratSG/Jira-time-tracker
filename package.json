@@ -2,7 +2,7 @@
     "name": "jira-time-tracker",
     "displayName": "JIRA Time Tracker",
     "description": "Track and log time to JIRA tickets",
-    "version": "0.0.5",
+    "version": "0.0.1",
     "engines": {
         "vscode": "^1.60.0"
     },
@@ -33,7 +33,11 @@
         "onCommand:jira-time-tracker.debug-commit",
         "onCommand:jira-time-tracker.debug-git-state",
         "onCommand:jira-time-tracker.debug-trigger-commit",
-        "onCommand:jira-time-tracker.test-extension"
+        "onCommand:jira-time-tracker.test-extension",
+        "onCommand:jira-time-tracker.show-productive-logs",
+        "onCommand:jira-time-tracker.test-output-channel",
+        "onCommand:jira-time-tracker.test-error-logging",
+        "onCommand:jira-time-tracker.check-productive-credentials"
     ],
     "main": "./out/extension.js",
     "contributes": {
@@ -157,6 +161,22 @@
             {
                 "command": "jira-time-tracker.test-extension",
                 "title": "Test: Extension Working"
+            },
+            {
+                "command": "jira-time-tracker.show-productive-logs",
+                "title": "Show Productive Time Logging Debug Output"
+            },
+            {
+                "command": "jira-time-tracker.test-output-channel",
+                "title": "Test: Output Channel Functionality"
+            },
+            {
+                "command": "jira-time-tracker.test-error-logging",
+                "title": "Test: Error Logging in Output Channel"
+            },
+            {
+                "command": "jira-time-tracker.check-productive-credentials",
+                "title": "Check Productive Credentials Source"
             }
         ],
         "configuration": {

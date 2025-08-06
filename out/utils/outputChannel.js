@@ -12,9 +12,9 @@ const createSilentOutputChannel = (name) => ({
     replace: () => { },
     dispose: () => { }
 });
-// Create output channel - COMPLETELY DISABLED
+// Create output channel - DISABLED for time logging
 const createOutputChannel = (name) => {
-    // Output channels are completely disabled - no messages at all
+    // Output channels are completely disabled for time logging
     return createSilentOutputChannel(name);
 };
 exports.createOutputChannel = createOutputChannel;

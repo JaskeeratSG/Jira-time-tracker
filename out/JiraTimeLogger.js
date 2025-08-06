@@ -22,13 +22,19 @@ class JiraTimeLogger {
      */
     log(message, showOutput = false) {
         // Completely silent - no console.log, no output channel
-        // this.loggingService.log(message, showOutput);
+        // console.log(message);
+        // this.outputChannel.appendLine(message);
+        // 
+        // if (showOutput) {
+        //     this.outputChannel.show(true);
+        // }
     }
     /**
      * Show the output channel for debugging Productive integration
      */
     showProductiveOutput() {
-        // Removed Productive integration debug output
+        // Output channel disabled for time logging
+        // this.outputChannel.show(true);
     }
     updateJiraService(authService) {
         // Create a new JiraService with the authentication service
@@ -311,12 +317,14 @@ class JiraTimeLogger {
                 await this.logTimeToProductive(ticket, minutes, description);
                 productiveSuccess = true;
                 this.log(`✅ Productive time logged: ${minutes} minutes`);
+                // Output channel disabled for time logging
+                // this.outputChannel.show(true);
             }
             catch (error) {
                 productiveError = error.message;
                 this.log(`❌ Productive logging failed: ${error.message}`);
-                // Show output on error so user can see what went wrong
-                this.outputChannel.show(true);
+                // Output channel disabled for time logging
+                // this.outputChannel.show(true);
             }
             // Step 4: Final result message
             if (productiveSuccess) {
@@ -567,49 +575,39 @@ class JiraTimeLogger {
     async getProductiveCredentials() {
         try {
             this.log('   🔍 Starting Productive credentials discovery...');
-            // First try: Get from VS Code settings (preferred method for configured setups)
-            const config = vscode.workspace.getConfiguration('jiraTimeTracker');
-            const settingsApiToken = config.get('productive.apiToken') || process.env.PRODUCTIVE_API_TOKEN;
-            const settingsOrgId = config.get('productive.organizationId') || process.env.PRODUCTIVE_ORGANIZATION_ID;
-            const settingsBaseUrl = config.get('productive.baseUrl') || process.env.PRODUCTIVE_BASE_URL || 'https://api.productive.io/api/v2';
-            this.log(`   📋 VS Code Settings Check:`);
-            this.log(`      API Token: ${settingsApiToken ? 'Found' : 'Missing'}`);
-            this.log(`      Organization ID: ${settingsOrgId ? 'Found' : 'Missing'}`);
-            this.log(`      Base URL: ${settingsBaseUrl}`);
-            if (settingsApiToken && settingsOrgId) {
-                this.log('   ✅ Using Productive credentials from VS Code settings');
-                return {
-                    apiToken: settingsApiToken,
-                    organizationId: settingsOrgId,
-                    baseUrl: settingsBaseUrl
-                };
-            }
-            // Second try: Get from AuthenticationService (for UI-based authentication)
-            this.log('   🔍 No VS Code settings found, trying AuthenticationService...');
+            // First try: Get from AuthenticationService (for UI-based authentication) - PRIORITY
+            this.log('   🔍 Checking AuthenticationService for current user...');
             const jiraService = this.jiraService;
-            if (!jiraService.authService) {
+            if (jiraService.authService) {
+                const authService = jiraService.authService;
+                const currentUser = await authService.getCurrentUser();
+                if (currentUser) {
+                    this.log(`   📋 Current User: ${currentUser.email}`);
+                    const userCreds = await authService.getUserCredentials(currentUser.email);
+                    if (userCreds?.productiveApiToken) {
+                        this.log('   ✅ Using Productive credentials from authenticated user');
+                        this.log(`   📋 User: ${currentUser.email}`);
+                        this.log(`   📋 Productive API Token: ${userCreds.productiveApiToken ? 'Found' : 'Missing'}`);
+                        return {
+                            apiToken: userCreds.productiveApiToken,
+                            organizationId: process.env.PRODUCTIVE_ORGANIZATION_ID || '42335',
+                            baseUrl: process.env.PRODUCTIVE_BASE_URL || 'https://api.productive.io/api/v2'
+                        };
+                    }
+                    else {
+                        this.log('⚠️ No Productive API token found in user credentials');
+                        this.log(`   📋 Available credentials: ${JSON.stringify(Object.keys(userCreds || {}), null, 2)}`);
+                    }
+                }
+                else {
+                    this.log('⚠️ No current user found in AuthenticationService');
+                }
+            }
+            else {
                 this.log('⚠️ No auth service available for Productive integration');
-                return null;
             }
-            const authService = jiraService.authService;
-            const currentUser = await authService.getCurrentUser();
-            if (!currentUser) {
-                this.log('⚠️ No current user found in AuthenticationService');
-                return null;
-            }
-            this.log(`   📋 Current User: ${currentUser.email}`);
-            const userCreds = await authService.getUserCredentials(currentUser.email);
-            if (!userCreds?.productiveApiToken) {
-                this.log('⚠️ No Productive API token found in user credentials');
-                this.log(`   📋 Available credentials: ${JSON.stringify(Object.keys(userCreds || {}), null, 2)}`);
-                return null;
-            }
-            this.log('   ✅ Using Productive credentials from AuthenticationService');
-            return {
-                apiToken: userCreds.productiveApiToken,
-                organizationId: process.env.PRODUCTIVE_ORGANIZATION_ID || '42335',
-                baseUrl: process.env.PRODUCTIVE_BASE_URL || 'https://api.productive.io/api/v2'
-            };
+            this.log('❌ No authenticated user found with Productive credentials');
+            return null;
         }
         catch (error) {
             this.log(`⚠️ Error getting Productive credentials: ${error}`);

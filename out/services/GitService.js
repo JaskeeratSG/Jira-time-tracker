@@ -891,8 +891,8 @@ class GitService {
         }
     }
     /**
-     * Get the last commit message using git command
-     */
+         * Get the last commit message using git command
+         */
     async getLastCommitMessage(repoPath) {
         try {
             const { exec } = require('child_process');

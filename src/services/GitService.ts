@@ -1019,10 +1019,10 @@ export class GitService {
             this.outputChannel.appendLine('✅ Manual commit trigger completed');
         } catch (error) {
             this.outputChannel.appendLine(`❌ Error triggering commit: ${error}`);
-        }
     }
+}
 
-    /**
+/**
      * Get the last commit message using git command
      */
     public async getLastCommitMessage(repoPath?: string): Promise<string | null> {

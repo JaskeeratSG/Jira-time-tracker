@@ -12,8 +12,8 @@ const createSilentOutputChannel = (name: string): vscode.OutputChannel => ({
     dispose: () => {}
 });
 
-// Create output channel - COMPLETELY DISABLED
+// Create output channel - DISABLED for time logging
 export const createOutputChannel = (name: string): vscode.OutputChannel => {
-    // Output channels are completely disabled - no messages at all
+    // Output channels are completely disabled for time logging
     return createSilentOutputChannel(name);
 }; 

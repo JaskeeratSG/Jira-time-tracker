@@ -377,6 +377,91 @@ function activate(context) {
                 vscode.window.showErrorMessage(`Failed to log time: ${error}`);
             }
         }));
+        // Add command to show output channel for Productive time logging debugging
+        context.subscriptions.push(vscode.commands.registerCommand('jira-time-tracker.show-productive-logs', async () => {
+            try {
+                outputChannel.show(true);
+                outputChannel.appendLine('📊 Productive Time Logging Debug Output');
+                outputChannel.appendLine('═'.repeat(60));
+                outputChannel.appendLine('Use this output channel to monitor Productive time logging.');
+                outputChannel.appendLine('The channel will automatically show when time is being logged to Productive.');
+                vscode.window.showInformationMessage('Productive logging debug output channel opened!');
+            }
+            catch (error) {
+                outputChannel.appendLine(`Error showing Productive logs: ${error}`);
+                vscode.window.showErrorMessage(`Failed to show Productive logs: ${error}`);
+            }
+        }));
+        // Add test commands for output channel functionality
+        context.subscriptions.push(vscode.commands.registerCommand('jira-time-tracker.test-output-channel', async () => {
+            try {
+                const { testOutputChannel } = await Promise.resolve().then(() => require('./test/output-channel-test'));
+                await testOutputChannel();
+            }
+            catch (error) {
+                outputChannel.appendLine(`Error testing output channel: ${error}`);
+                vscode.window.showErrorMessage(`Failed to test output channel: ${error}`);
+            }
+        }));
+        context.subscriptions.push(vscode.commands.registerCommand('jira-time-tracker.test-error-logging', async () => {
+            try {
+                const { testErrorLogging } = await Promise.resolve().then(() => require('./test/output-channel-test'));
+                await testErrorLogging();
+            }
+            catch (error) {
+                outputChannel.appendLine(`Error testing error logging: ${error}`);
+                vscode.window.showErrorMessage(`Failed to test error logging: ${error}`);
+            }
+        }));
+        // Add command to check Productive credentials being used
+        context.subscriptions.push(vscode.commands.registerCommand('jira-time-tracker.check-productive-credentials', async () => {
+            try {
+                outputChannel.show(true);
+                outputChannel.appendLine('🔍 Checking Productive Credentials Source');
+                outputChannel.appendLine('═'.repeat(60));
+                // Check VS Code settings
+                const config = vscode.workspace.getConfiguration('jiraTimeTracker');
+                const settingsApiToken = config.get('productive.apiToken');
+                const settingsOrgId = config.get('productive.organizationId');
+                outputChannel.appendLine('📋 VS Code Settings:');
+                outputChannel.appendLine(`   API Token: ${settingsApiToken ? 'Configured' : 'Not configured'}`);
+                outputChannel.appendLine(`   Organization ID: ${settingsOrgId || 'Not configured'}`);
+                // Check authenticated user
+                const jiraService = timeLogger.jiraService;
+                if (jiraService.authService) {
+                    const currentUser = await jiraService.authService.getCurrentUser();
+                    if (currentUser) {
+                        outputChannel.appendLine(`\n📋 Authenticated User: ${currentUser.email}`);
+                        const userCreds = await jiraService.authService.getUserCredentials(currentUser.email);
+                        if (userCreds?.productiveApiToken) {
+                            outputChannel.appendLine('   ✅ Productive API Token: Found in user credentials');
+                        }
+                        else {
+                            outputChannel.appendLine('   ❌ Productive API Token: Not found in user credentials');
+                        }
+                    }
+                    else {
+                        outputChannel.appendLine('\n📋 Authenticated User: None');
+                    }
+                }
+                else {
+                    outputChannel.appendLine('\n📋 Authentication Service: Not available');
+                }
+                // Check environment variables
+                outputChannel.appendLine('\n📋 Environment Variables:');
+                outputChannel.appendLine(`   PRODUCTIVE_API_TOKEN: ${process.env.PRODUCTIVE_API_TOKEN ? 'Set' : 'Not set'}`);
+                outputChannel.appendLine(`   PRODUCTIVE_ORGANIZATION_ID: ${process.env.PRODUCTIVE_ORGANIZATION_ID || 'Not set'}`);
+                outputChannel.appendLine('\n💡 Priority Order:');
+                outputChannel.appendLine('   1. Authenticated user credentials (highest priority)');
+                outputChannel.appendLine('   2. VS Code settings');
+                outputChannel.appendLine('   3. Environment variables');
+                vscode.window.showInformationMessage('Productive credentials check completed! Check output channel.');
+            }
+            catch (error) {
+                outputChannel.appendLine(`Error checking Productive credentials: ${error}`);
+                vscode.window.showErrorMessage(`Failed to check Productive credentials: ${error}`);
+            }
+        }));
         // POC Test Commands
         context.subscriptions.push(vscode.commands.registerCommand('jira-time-tracker.poc-environment', async () => {
             try {

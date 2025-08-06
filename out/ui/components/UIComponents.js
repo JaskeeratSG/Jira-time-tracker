@@ -465,7 +465,9 @@ class StylesComponent extends BaseComponent {
                     gap: 8px;
                     margin-bottom: 12px;
                 }
-                
+                .project-issue-selection{
+                   display:none;
+                }
                 .user-item {
                     display: flex;
                     justify-content: space-between;
@@ -707,7 +709,7 @@ class AuthenticationSectionComponent extends BaseComponent {
                     <div class="service-section">
                         <div class="service-title">🛠️ Productive Configuration</div>
                         <input type="password" id="productiveApiTokenInput" class="auth-input" placeholder="Productive API Token" required>
-                        <small class="auth-note">Organization ID and URL configured in .env file</small>
+                        <small class="auth-note">Organization configured</small>
                     </div>
                     
                     <button id="signInBtn" class="auth-button" type="button">
@@ -770,6 +772,7 @@ class ProjectIssueSelectionComponent extends BaseComponent {
     render() {
         return `
             <div class="section">
+            <div class="project-issue-selection">
                 <div class="section-title">Project & Issue</div>
                 <select id="projectSelect" class="dropdown-select" onchange="onProjectChange()" disabled>
                     <option value="">Select Project</option>
@@ -784,6 +787,7 @@ class ProjectIssueSelectionComponent extends BaseComponent {
                 <button class="submit-button" onclick="clearAll()">
                     <span>Clear All</span>
                 </button>
+             </div>
             </div>
         `;
     }

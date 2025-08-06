@@ -51,16 +51,41 @@ export interface ProductiveTimeEntry {
 }
 
 export class ProductiveService {
+    private outputChannel?: vscode.OutputChannel;
     
-    constructor() {}
+    constructor(outputChannel?: vscode.OutputChannel) {
+        this.outputChannel = outputChannel;
+    }
 
     /**
-     * Get essential Productive credentials from VS Code settings or environment variables
+     * Set output channel for logging
+     */
+    public setOutputChannel(outputChannel: vscode.OutputChannel): void {
+        this.outputChannel = outputChannel;
+    }
+
+    /**
+     * Log message to output channel if available
+     */
+    private log(message: string): void {
+        // Output channel disabled for time logging
+        // if (this.outputChannel) {
+        //     this.outputChannel.appendLine(message);
+        // }
+        // console.log(message);
+    }
+
+    /**
+     * Get essential Productive credentials from authenticated user or VS Code settings
      */
     private getCredentials(): ProductiveCredentials {
+        // First try: Get from authenticated user (if available)
+        // Note: This method is called from ProductiveService which doesn't have access to auth service
+        // The JiraTimeLogger handles the authenticated user priority
+        
         const config = vscode.workspace.getConfiguration('jiraTimeTracker');
         
-        // Only get essential API credentials
+        // Only get essential API credentials from settings/environment
         const organizationId = config.get<string>('productive.organizationId') || process.env.PRODUCTIVE_ORGANIZATION_ID;
         const apiToken = config.get<string>('productive.apiToken') || process.env.PRODUCTIVE_API_TOKEN;
         const baseUrl = config.get<string>('productive.baseUrl') || process.env.PRODUCTIVE_BASE_URL || 'https://api.productive.io/api/v2';
@@ -307,9 +332,23 @@ export class ProductiveService {
         jiraTicketId?: string
     ): Promise<any> {
         try {
+            this.log(`🚀 Starting Productive time entry creation...`);
+            this.log(`📋 Parameters:`);
+            this.log(`   📁 Project ID: ${projectId}`);
+            this.log(`   🛠️  Service ID: ${serviceId}`);
+            this.log(`   ⏰ Time: ${timeMinutes} minutes`);
+            this.log(`   📅 Date: ${date || 'Today'}`);
+            this.log(`   📝 Description: ${description || 'Auto-generated'}`);
+            this.log(`   🎯 Jira Ticket: ${jiraTicketId || 'None'}`);
+
             const credentials = this.getCredentials();
+            this.log(`✅ Productive credentials retrieved`);
+            
             const user = await this.getAuthenticatedUser();
+            this.log(`✅ Authenticated user: ${user.name} (${user.email})`);
+            
             const entryDate = date || new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+            this.log(`📅 Using entry date: ${entryDate}`);
 
             const timeEntry = {
                 data: {
@@ -354,17 +393,25 @@ export class ProductiveService {
                 }
             };
 
+            this.log(`📤 Sending time entry to Productive API...`);
             const response = await this.makeRequest('/time_entries', 'POST', timeEntry);
             
-            console.log(`✅ Time logged successfully:`);
-            console.log(`   👤 User: ${user.name} (${user.email})`);
-            console.log(`   📁 Project ID: ${projectId}`);
-            console.log(`   🛠️  Service ID: ${serviceId}`);
-            console.log(`   ⏰ Time: ${timeMinutes} minutes`);
-            console.log(`   📝 Entry ID: ${response.data.id}`);
+            this.log(`✅ Time logged successfully to Productive:`);
+            this.log(`   👤 User: ${user.name} (${user.email})`);
+            this.log(`   📁 Project ID: ${projectId}`);
+            this.log(`   🛠️  Service ID: ${serviceId}`);
+            this.log(`   ⏰ Time: ${timeMinutes} minutes`);
+            this.log(`   📝 Entry ID: ${response.data.id}`);
+            this.log(`   📅 Date: ${entryDate}`);
+            this.log(`   🎯 Jira Ticket: ${jiraTicketId || 'None'}`);
 
             return response.data;
         } catch (error: any) {
+            this.log(`❌ Failed to log time to Productive: ${error.message}`);
+            if (error.response) {
+                this.log(`📋 API Status: ${error.response.status}`);
+                this.log(`📋 API Response: ${JSON.stringify(error.response.data, null, 2)}`);
+            }
             throw new Error(`Failed to log time to Productive: ${error.message}`);
         }
     }
