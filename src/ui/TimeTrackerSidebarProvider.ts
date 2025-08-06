@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import axios from 'axios';
 import { JiraTimeLogger } from '../JiraTimeLogger';
 import { GitService } from '../services/GitService';
 import { AuthenticationService, AuthenticatedUser } from '../services/AuthenticationService';
@@ -23,6 +24,7 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
     private _outputChannel: vscode.OutputChannel;
     private _authService: AuthenticationService;
     private _branchChangeService?: BranchChangeService;
+    private _currentTicketInfo?: BranchTicketInfo; // Store current ticket info in extension
 
     constructor(
         private readonly _extensionUri: vscode.Uri, 
@@ -46,17 +48,20 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
             return;
         }
 
-        this._branchChangeService.onTicketAutoPopulated = (ticketInfo: BranchTicketInfo) => {
+        this._branchChangeService.onTicketAutoPopulated = async (ticketInfo: BranchTicketInfo) => {
             this._outputChannel.appendLine(`🎯 Auto-populated ticket received: ${ticketInfo.ticketId}`);
-            this._updateUIWithTicketInfo(ticketInfo);
+            await this._updateUIWithTicketInfo(ticketInfo);
         };
 
         this._outputChannel.appendLine('✅ Branch change monitoring set up');
     }
 
-    private _updateUIWithTicketInfo(ticketInfo: BranchTicketInfo): void {
+    private async _updateUIWithTicketInfo(ticketInfo: BranchTicketInfo): Promise<void> {
         this._outputChannel.appendLine(`🎯 Auto-populated ticket received: ${ticketInfo.ticketId}`);
         this._outputChannel.appendLine(`📝 Updating UI with ticket: ${ticketInfo.ticketId} (${ticketInfo.projectKey})`);
+        
+        // Store current ticket info in extension
+        this._currentTicketInfo = ticketInfo;
         
         // Send branch-info message to webview (same format as existing _loadBranchInfo)
         this._view?.webview.postMessage({
@@ -64,6 +69,53 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
             projectKey: ticketInfo.projectKey,
             issueKey: ticketInfo.ticketId
         });
+        
+        // Send ticket info to webview for display
+        try {
+            // Get full ticket details from Jira using the existing service
+            const credentials = await this._timeLogger.jiraService.getCurrentCredentials();
+            const response = await axios.get(
+                `${credentials.baseUrl}/rest/api/2/issue/${ticketInfo.ticketId}`,
+                {
+                    auth: {
+                        username: credentials.email,
+                        password: credentials.apiToken
+                    },
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                }
+            );
+            
+            if (response.data) {
+                const ticketDetails = response.data;
+                const fullTicketInfo = {
+                    ticketId: ticketInfo.ticketId,
+                    projectKey: ticketInfo.projectKey,
+                    summary: ticketDetails.fields?.summary || 'No summary available',
+                    status: ticketDetails.fields?.status?.name || 'Unknown Status',
+                    description: ticketDetails.fields?.description || null
+                };
+                
+                this._view?.webview.postMessage({
+                    type: 'ticket-info',
+                    ...fullTicketInfo
+                });
+                
+                this._outputChannel.appendLine(`✅ Ticket info sent to UI: ${ticketInfo.ticketId}`);
+            }
+        } catch (error: any) {
+            this._outputChannel.appendLine(`❌ Error fetching ticket details: ${error.message}`);
+            // Still send basic ticket info even if details fail
+            this._view?.webview.postMessage({
+                type: 'ticket-info',
+                ticketId: ticketInfo.ticketId,
+                projectKey: ticketInfo.projectKey,
+                summary: 'Unable to load ticket details',
+                status: 'Unknown Status',
+                description: null
+            });
+        }
         
         // Removed auto-populated ticket notification
     }
@@ -95,6 +147,9 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
 
             // Check authentication status on load
             this._checkAuthenticationOnLoad();
+            
+            // Check for current ticket info on load
+            this._checkCurrentTicketInfo();
 
             webviewView.webview.onDidReceiveMessage(async (data) => {
                 this._outputChannel.appendLine('Message received: ' + JSON.stringify(data, null, 2));
@@ -328,6 +383,52 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
                                 this._outputChannel.appendLine('Auth status check failed: ' + error.message);
                             }
                             break;
+                        case 'openInJira':
+                            try {
+                                const ticketId = data.ticketId;
+                                if (ticketId) {
+                                    const activeUser = await this._authService.getActiveUser();
+                                    if (activeUser) {
+                                        const jiraUrl = `${activeUser.baseUrl}/browse/${ticketId}`;
+                                        await vscode.env.openExternal(vscode.Uri.parse(jiraUrl));
+                                        this._showNotification(`Opening ${ticketId} in Jira`, 'info');
+                                    } else {
+                                        this._showNotification('Please sign in to open tickets in Jira', 'error');
+                                    }
+                                }
+                            } catch (error: any) {
+                                this._outputChannel.appendLine('Error opening ticket in Jira: ' + error.message);
+                                this._showNotification('Failed to open ticket in Jira', 'error');
+                            }
+                            break;
+                        case 'getCurrentTicketInfo':
+                            try {
+                                // Use stored ticket info if available
+                                if (this._currentTicketInfo) {
+                                    this._outputChannel.appendLine(`Sending stored ticket info: ${this._currentTicketInfo.ticketId}`);
+                                    await this._updateUIWithTicketInfo(this._currentTicketInfo);
+                                } else {
+                                    // Get current branch info and check for ticket
+                                    const branchInfo = await this._timeLogger.getBranchTicketInfo();
+                                    if (branchInfo) {
+                                        // Convert to BranchTicketInfo format
+                                        const ticketInfo: BranchTicketInfo = {
+                                            ticketId: branchInfo.issueKey,
+                                            projectKey: branchInfo.projectKey
+                                        };
+                                        await this._updateUIWithTicketInfo(ticketInfo);
+                                    } else {
+                                        // Send empty ticket info to hide the section
+                                        this._view?.webview.postMessage({
+                                            type: 'ticket-info',
+                                            ticketId: null
+                                        });
+                                    }
+                                }
+                            } catch (error: any) {
+                                this._outputChannel.appendLine('Error getting current ticket info: ' + error.message);
+                            }
+                            break;
                     }
                 } catch (error: any) {
                     this._outputChannel.appendLine('Error handling message: ' + error.message);
@@ -378,6 +479,42 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
         }
     }
 
+    private async _checkCurrentTicketInfo() {
+        try {
+            this._outputChannel.appendLine('Checking for current ticket info...');
+            
+            // First check if we have stored ticket info
+            if (this._currentTicketInfo) {
+                this._outputChannel.appendLine(`Using stored ticket info: ${this._currentTicketInfo.ticketId}`);
+                await this._updateUIWithTicketInfo(this._currentTicketInfo);
+                return;
+            }
+            
+            // If no stored info, check current branch
+            const branchInfo = await this._timeLogger.getBranchTicketInfo();
+            if (branchInfo) {
+                // Convert to BranchTicketInfo format
+                const ticketInfo: BranchTicketInfo = {
+                    ticketId: branchInfo.issueKey,
+                    projectKey: branchInfo.projectKey
+                };
+                await this._updateUIWithTicketInfo(ticketInfo);
+                this._outputChannel.appendLine(`Found current ticket: ${ticketInfo.ticketId}`);
+            } else {
+                this._outputChannel.appendLine('No current ticket found');
+                // Clear stored ticket info
+                this._currentTicketInfo = undefined;
+                // Send empty ticket info to hide the section
+                this._view?.webview.postMessage({
+                    type: 'ticket-info',
+                    ticketId: null
+                });
+            }
+        } catch (error: any) {
+            this._outputChannel.appendLine('Error checking current ticket info: ' + error.message);
+        }
+    }
+
     private _setUpInterval() {
         setInterval(() => {
             if (this._view) {
@@ -406,43 +543,14 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
             });
 
             if (branchInfo) {
-                // Get projects for the current user's email
-                const config = vscode.workspace.getConfiguration('jiraTimeTracker');
-                const userEmail = config.get('jiraEmail');
-                
-                if (userEmail) {
-                    this._outputChannel.appendLine('Loading projects for user email...');
-                    const projects = await this._timeLogger.jiraService.getProjectsByUserEmail(userEmail as string);
-                    this._outputChannel.appendLine('Projects loaded in branch info: ' + JSON.stringify(projects, null, 2));
-                    this._view?.webview.postMessage({
-                        type: 'projects',
-                        projects: projects
-                    });
+                // Only send branch info, don't load projects automatically
+                this._view?.webview.postMessage({
+                    type: 'branch-info',
+                    projectKey: branchInfo.projectKey,
+                    issueKey: branchInfo.issueKey
+                });
 
-                    // Then load issues for the project
-                    this._outputChannel.appendLine(`Loading issues for project ${branchInfo.projectKey}...`);
-                    const paginatedResult = await this._timeLogger.jiraService.getProjectIssuesUnfilteredPaginated(branchInfo.projectKey, 1, 5);
-                    this._outputChannel.appendLine(`Issues loaded for project ${branchInfo.projectKey}: ${paginatedResult.issues.length} issues (page 1 of ${Math.ceil(paginatedResult.total / 5)})`);
-                    this._view?.webview.postMessage({
-                        type: 'issues',
-                        issues: paginatedResult.issues,
-                        pagination: {
-                            total: paginatedResult.total,
-                            page: paginatedResult.page,
-                            pageSize: paginatedResult.pageSize,
-                            hasMore: paginatedResult.hasMore
-                        }
-                    });
-
-                    // Finally set the selected values
-                    this._view?.webview.postMessage({
-                        type: 'branch-info',
-                        projectKey: branchInfo.projectKey,
-                        issueKey: branchInfo.issueKey
-                    });
-
-                    this._showNotification(`Loaded ticket from branch: ${branchInfo.issueKey}`, 'info');
-                }
+                this._showNotification(`Found ticket from branch: ${branchInfo.issueKey}`, 'info');
             }
         } catch (error: any) {
             this._outputChannel.appendLine('Error loading branch info: ' + error.message);

@@ -2,7 +2,7 @@
 // UI Components for Jira Time Tracker
 // This provides a component-based approach while maintaining the same HTML output
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.MainLayoutComponent = exports.JavaScriptComponent = exports.ManualTimeLogComponent = exports.TimerSectionComponent = exports.TimerButtonComponent = exports.ProjectIssueSelectionComponent = exports.DropdownComponent = exports.EmailSectionComponent = exports.AuthenticationSectionComponent = exports.NotificationComponent = exports.StylesComponent = exports.BaseComponent = void 0;
+exports.MainLayoutComponent = exports.JavaScriptComponent = exports.TicketInfoComponent = exports.ManualTimeLogComponent = exports.TimerSectionComponent = exports.TimerButtonComponent = exports.ProjectIssueSelectionComponent = exports.DropdownComponent = exports.EmailSectionComponent = exports.AuthenticationSectionComponent = exports.NotificationComponent = exports.StylesComponent = exports.BaseComponent = void 0;
 class BaseComponent {
     constructor(props = {}) {
         this.props = props;
@@ -671,6 +671,163 @@ class StylesComponent extends BaseComponent {
                     padding: 1px 2px;
                     border-radius: 2px;
                 }
+                
+                /* Ticket Info Component Styles */
+                .ticket-info-section {
+                    background: var(--vscode-editor-background);
+                    border: 1px solid var(--vscode-input-border);
+                    border-radius: 8px;
+                    padding: 16px;
+                    margin-bottom: 16px;
+                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+                    transition: all 0.3s ease;
+                }
+                
+                .ticket-info-header {
+                    display: flex;
+                    align-items: flex-start;
+                    gap: 12px;
+                    margin-bottom: 16px;
+                }
+                
+                .ticket-icon {
+                    font-size: 24px;
+                    flex-shrink: 0;
+                }
+                
+                .ticket-title {
+                    flex: 1;
+                    min-width: 0;
+                }
+                
+                .ticket-key {
+                    font-size: 16px;
+                    font-weight: 700;
+                    color: var(--vscode-foreground);
+                    margin-bottom: 4px;
+                    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+                }
+                
+                .ticket-summary {
+                    font-size: 14px;
+                    color: var(--vscode-descriptionForeground);
+                    line-height: 1.4;
+                    word-wrap: break-word;
+                }
+                
+                .ticket-details {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                    margin-bottom: 16px;
+                }
+                
+                .ticket-project, .ticket-status {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    padding: 8px 12px;
+                    background: var(--vscode-editor-inactiveSelectionBackground);
+                    border-radius: 4px;
+                }
+                
+                .ticket-description {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                }
+                
+                .label {
+                    font-size: 12px;
+                    font-weight: 600;
+                    color: var(--vscode-descriptionForeground);
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                }
+                
+                .value {
+                    font-size: 13px;
+                    color: var(--vscode-foreground);
+                    font-weight: 500;
+                }
+                
+                .description-content {
+                    background: var(--vscode-editor-inactiveSelectionBackground);
+                    padding: 12px;
+                    border-radius: 4px;
+                    font-size: 13px;
+                    line-height: 1.5;
+                    color: var(--vscode-foreground);
+                    max-height: 120px;
+                    overflow-y: auto;
+                    white-space: pre-wrap;
+                    position: relative;
+                }
+                
+                .description-content.truncated::after {
+                    content: "...";
+                    position: absolute;
+                    bottom: 8px;
+                    right: 12px;
+                    background: var(--vscode-editor-inactiveSelectionBackground);
+                    padding: 0 4px;
+                    color: var(--vscode-descriptionForeground);
+                    font-size: 12px;
+                    font-weight: 600;
+                    border-radius: 2px;
+                }
+                
+                .description-content.truncated {
+                    mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+                    -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+                }
+                
+                .ticket-actions {
+                    display: flex;
+                    gap: 8px;
+                    justify-content: flex-start;
+                }
+                
+                .action-button {
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    padding: 8px 12px;
+                    background: var(--vscode-button-secondaryBackground);
+                    color: var(--vscode-button-secondaryForeground);
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 12px;
+                    font-weight: 500;
+                    transition: all 0.2s ease;
+                    text-decoration: none;
+                }
+                
+                .action-button:hover {
+                    background: var(--vscode-button-secondaryHoverBackground);
+                    transform: translateY(-1px);
+                }
+                
+                .action-icon {
+                    font-size: 14px;
+                }
+                
+                /* Animation for ticket info appearance */
+                @keyframes slideDown {
+                    from {
+                        opacity: 0;
+                        transform: translateY(-10px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateY(0);
+                    }
+                }
+                
+                .ticket-info-section.show {
+                    animation: slideDown 0.3s ease;
+                }
             </style>
         `;
     }
@@ -855,6 +1012,46 @@ class ManualTimeLogComponent extends BaseComponent {
     }
 }
 exports.ManualTimeLogComponent = ManualTimeLogComponent;
+class TicketInfoComponent extends BaseComponent {
+    render() {
+        return `
+            <div id="ticketInfo" class="ticket-info-section" style="display: none;">
+                <div class="ticket-info-header">
+                    <div class="ticket-icon">🎫</div>
+                    <div class="ticket-title">
+                        <div class="ticket-key" id="ticketKey"></div>
+                        <div class="ticket-summary" id="ticketSummary"></div>
+                    </div>
+                </div>
+                <div class="ticket-details">
+                    <div class="ticket-project">
+                        <span class="label">Project:</span>
+                        <span id="ticketProject" class="value"></span>
+                    </div>
+                    <div class="ticket-status">
+                        <span class="label">Status:</span>
+                        <span id="ticketStatus" class="value"></span>
+                    </div>
+                    <div class="ticket-description" id="ticketDescription">
+                        <span class="label">Description:</span>
+                        <div class="description-content" id="ticketDescriptionContent"></div>
+                    </div>
+                </div>
+                <div class="ticket-actions">
+                    <button class="action-button" id="openInJiraBtn" title="Open in Jira">
+                        <span class="action-icon">🔗</span>
+                        Open in Jira
+                    </button>
+                    <button class="action-button" id="copyTicketKeyBtn" title="Copy Ticket Key">
+                        <span class="action-icon">📋</span>
+                        Copy Key
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+}
+exports.TicketInfoComponent = TicketInfoComponent;
 class JavaScriptComponent extends BaseComponent {
     render() {
         return `
@@ -957,8 +1154,8 @@ class JavaScriptComponent extends BaseComponent {
                         // Clear sign in form
                         clearSignInForm();
                         
-                        // Auto-load projects for the authenticated user
-                        setTimeout(() => loadProjectsForUser(), 1000);
+                        // Don't auto-load projects - let user click the button when needed
+                        showNotification('Signed in successfully! Click "Load Projects" to start.', 'success');
                     } else {
                         // Show sign in form and clear everything
                         if (currentUserDisplay) currentUserDisplay.style.display = 'none';
@@ -1163,6 +1360,15 @@ class JavaScriptComponent extends BaseComponent {
                                         // Note: Backend already sends notification for branch info
                                     }
                                 }, 1000);
+                            }
+                            break;
+                        case 'ticket-info':
+                            console.log('Received ticket info:', message);
+                            if (message.ticketId === null) {
+                                // Clear ticket info
+                                clearTicketInfo();
+                            } else {
+                                updateTicketInfo(message);
                             }
                             break;
                         case 'git-email':
@@ -1527,6 +1733,133 @@ class JavaScriptComponent extends BaseComponent {
                     return before + '<span class="search-highlight">' + match + '</span>' + after;
                 }
 
+                // Ticket Info Functions
+                function updateTicketInfo(ticketData) {
+                    const ticketInfoSection = document.getElementById('ticketInfo');
+                    const ticketKey = document.getElementById('ticketKey');
+                    const ticketSummary = document.getElementById('ticketSummary');
+                    const ticketProject = document.getElementById('ticketProject');
+                    const ticketStatus = document.getElementById('ticketStatus');
+                    const ticketDescription = document.getElementById('ticketDescription');
+                    const ticketDescriptionContent = document.getElementById('ticketDescriptionContent');
+                    
+                    if (!ticketInfoSection) return;
+                    
+                    if (ticketData && ticketData.ticketId) {
+                        // Update ticket information
+                        if (ticketKey) ticketKey.textContent = ticketData.ticketId;
+                        if (ticketSummary) ticketSummary.textContent = ticketData.summary || 'No summary available';
+                        if (ticketProject) ticketProject.textContent = ticketData.projectKey || 'Unknown Project';
+                        if (ticketStatus) ticketStatus.textContent = ticketData.status || 'Unknown Status';
+                        
+                        // Handle description
+                        if (ticketDescriptionContent) {
+                            if (ticketData.description) {
+                                const description = ticketData.description;
+                                ticketDescriptionContent.textContent = description;
+                                
+                                // Check if description is too long and needs truncation
+                                if (description.length > 300) {
+                                    // Truncate to 300 characters and add ellipsis
+                                    const truncatedText = description.substring(0, 300);
+                                    ticketDescriptionContent.textContent = truncatedText;
+                                    ticketDescriptionContent.classList.add('truncated');
+                                    
+                                    // Add "Show more" functionality
+                                    const showMoreBtn = document.createElement('button');
+                                    showMoreBtn.className = 'action-button';
+                                    showMoreBtn.innerHTML = '<span class="action-icon">📖</span>Show More';
+                                    showMoreBtn.onclick = () => {
+                                        ticketDescriptionContent.textContent = description;
+                                        ticketDescriptionContent.classList.remove('truncated');
+                                        showMoreBtn.remove();
+                                        
+                                        // Add "Show less" button
+                                        const showLessBtn = document.createElement('button');
+                                        showLessBtn.className = 'action-button';
+                                        showLessBtn.innerHTML = '<span class="action-icon">📖</span>Show Less';
+                                        showLessBtn.onclick = () => {
+                                            ticketDescriptionContent.textContent = truncatedText;
+                                            ticketDescriptionContent.classList.add('truncated');
+                                            showLessBtn.remove();
+                                            ticketDescriptionContent.parentNode.appendChild(showMoreBtn);
+                                        };
+                                        ticketDescriptionContent.parentNode.appendChild(showLessBtn);
+                                    };
+                                    
+                                    // Add show more button to ticket actions
+                                    const ticketActions = document.querySelector('.ticket-actions');
+                                    if (ticketActions) {
+                                        ticketActions.appendChild(showMoreBtn);
+                                    }
+                                } else {
+                                    ticketDescriptionContent.classList.remove('truncated');
+                                }
+                                
+                                if (ticketDescription) ticketDescription.style.display = 'flex';
+                            } else {
+                                if (ticketDescription) ticketDescription.style.display = 'none';
+                            }
+                        }
+                        
+                        // Show the ticket info section with animation
+                        ticketInfoSection.style.display = 'block';
+                        setTimeout(() => {
+                            ticketInfoSection.classList.add('show');
+                        }, 10);
+                        
+                        // Set up action buttons
+                        setupTicketActionButtons(ticketData);
+                        
+                        console.log('Ticket info updated:', ticketData);
+                    } else {
+                        // Hide the ticket info section
+                        ticketInfoSection.style.display = 'none';
+                        ticketInfoSection.classList.remove('show');
+                    }
+                }
+                
+                // Function to clear ticket info
+                function clearTicketInfo() {
+                    const ticketInfoSection = document.getElementById('ticketInfo');
+                    if (ticketInfoSection) {
+                        ticketInfoSection.style.display = 'none';
+                        ticketInfoSection.classList.remove('show');
+                    }
+                }
+                
+                function setupTicketActionButtons(ticketData) {
+                    const openInJiraBtn = document.getElementById('openInJiraBtn');
+                    const copyTicketKeyBtn = document.getElementById('copyTicketKeyBtn');
+                    
+                    if (openInJiraBtn) {
+                        openInJiraBtn.onclick = () => {
+                            if (ticketData.ticketId) {
+                                vscode.postMessage({
+                                    type: 'openInJira',
+                                    ticketId: ticketData.ticketId
+                                });
+                            }
+                        };
+                    }
+                    
+                    if (copyTicketKeyBtn) {
+                        copyTicketKeyBtn.onclick = () => {
+                            if (ticketData.ticketId) {
+                                navigator.clipboard.writeText(ticketData.ticketId).then(() => {
+                                    showNotification('Ticket key copied to clipboard', 'success');
+                                }).catch(() => {
+                                    showNotification('Failed to copy ticket key', 'error');
+                                });
+                            }
+                        };
+                    }
+                    
+                    // Clear any existing show more/less buttons
+                    const existingShowButtons = document.querySelectorAll('.action-button[onclick*="Show"]');
+                    existingShowButtons.forEach(btn => btn.remove());
+                }
+
                 // Initialize everything
                 updateButtonStates();
 
@@ -1541,6 +1874,9 @@ class JavaScriptComponent extends BaseComponent {
                     if (loadProjectsBtn) {
                         loadProjectsBtn.addEventListener('click', loadProjectsForUser);
                     }
+                    
+                    // Request current ticket info from extension
+                    vscode.postMessage({ type: 'getCurrentTicketInfo' });
                 });
             </script>
         `;
@@ -1552,6 +1888,7 @@ class MainLayoutComponent extends BaseComponent {
         const styles = new StylesComponent();
         const notifications = new NotificationComponent();
         const authSection = new AuthenticationSectionComponent();
+        const ticketInfo = new TicketInfoComponent();
         const projectIssueSelection = new ProjectIssueSelectionComponent();
         const timerSection = new TimerSectionComponent();
         const manualTimeLog = new ManualTimeLogComponent();
@@ -1566,6 +1903,7 @@ class MainLayoutComponent extends BaseComponent {
         <body>
             ${notifications.render()}
             ${authSection.render()}
+            ${ticketInfo.render()}
             ${projectIssueSelection.render()}
             ${timerSection.render()}
             ${manualTimeLog.render()}
