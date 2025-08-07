@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.JiraTimeLogger = void 0;
 const vscode = require("vscode");
+const axios_1 = require("axios");
 const JiraService_1 = require("./services/JiraService");
 const git_1 = require("./utils/git");
 class JiraTimeLogger {
@@ -20,21 +21,32 @@ class JiraTimeLogger {
     /**
      * Log message to both console and VS Code output channel
      */
+    /**
+     * Check if logging is enabled via configuration
+     */
+    isLoggingEnabled() {
+        const config = vscode.workspace.getConfiguration('jiraTimeTracker');
+        return config.get('enableLogging', false);
+    }
     log(message, showOutput = false) {
-        // Completely silent - no console.log, no output channel
-        // console.log(message);
-        // this.outputChannel.appendLine(message);
-        // 
-        // if (showOutput) {
-        //     this.outputChannel.show(true);
-        // }
+        // Check if logging is enabled via configuration
+        if (!this.isLoggingEnabled()) {
+            return; // Silent mode - no output
+        }
+        console.log(message);
+        this.outputChannel.appendLine(message);
+        if (showOutput) {
+            this.outputChannel.show(true);
+        }
     }
     /**
      * Show the output channel for debugging Productive integration
      */
     showProductiveOutput() {
-        // Output channel disabled for time logging
-        // this.outputChannel.show(true);
+        if (!this.isLoggingEnabled()) {
+            return; // Silent mode - don't show output channel
+        }
+        this.outputChannel.show(true);
     }
     updateJiraService(authService) {
         // Create a new JiraService with the authentication service
@@ -299,11 +311,14 @@ class JiraTimeLogger {
             this.log('='.repeat(50));
             // Step 1: Verify Jira ticket exists (following proven pattern)
             this.log('\n📊 Step 1: Verifying Jira ticket...');
-            const ticketExists = await this.verifyJiraTicket(ticket);
-            if (!ticketExists) {
+            const ticketInfo = await this.verifyJiraTicket(ticket);
+            if (!ticketInfo.exists) {
                 throw new Error(`Jira ticket ${ticket} not found or inaccessible`);
             }
             this.log(`✅ Jira ticket verified: ${ticket}`);
+            // Store project information for Productive lookup
+            const jiraProjectName = ticketInfo.projectName;
+            const jiraProjectKey = ticketInfo.projectKey;
             // Step 2: Log time to JIRA (primary service - following proven pattern)
             this.log('\n📊 Step 2: Logging time to Jira...');
             await this.logTimeToJira(ticket, minutes, description);
@@ -314,7 +329,7 @@ class JiraTimeLogger {
             let productiveSuccess = false;
             let productiveError = '';
             try {
-                await this.logTimeToProductive(ticket, minutes, description);
+                await this.logTimeToProductive(ticket, minutes, description, jiraProjectName);
                 productiveSuccess = true;
                 this.log(`✅ Productive time logged: ${minutes} minutes`);
                 // Output channel disabled for time logging
@@ -345,12 +360,27 @@ class JiraTimeLogger {
     async verifyJiraTicket(ticketId) {
         try {
             this.log(`   🔍 Checking if ticket ${ticketId} exists...`);
-            // Use jiraService to verify ticket exists
-            const exists = await this.jiraService.verifyTicketExists(ticketId);
-            if (exists) {
+            // Get ticket details including project information
+            const credentials = await this.jiraService.getCurrentCredentials();
+            const response = await axios_1.default.get(`${credentials.baseUrl}/rest/api/2/issue/${ticketId}`, {
+                auth: {
+                    username: credentials.email,
+                    password: credentials.apiToken
+                }
+            });
+            if (response.status === 200) {
+                const issue = response.data;
+                const projectName = issue.fields.project.name;
+                const projectKey = issue.fields.project.key;
                 this.log(`   ✅ Ticket found: ${ticketId}`);
+                this.log(`   📋 Project: ${projectName} (${projectKey})`);
+                return {
+                    exists: true,
+                    projectName: projectName,
+                    projectKey: projectKey
+                };
             }
-            return exists;
+            return { exists: false };
         }
         catch (error) {
             this.log(`   ❌ Ticket verification failed: ${error.message}`);
@@ -363,7 +393,7 @@ class JiraTimeLogger {
             else if (error.message.includes('403')) {
                 this.log(`   💡 Suggestion: You may not have permission to view this ticket`);
             }
-            return false;
+            return { exists: false };
         }
     }
     /**
@@ -379,7 +409,7 @@ class JiraTimeLogger {
     /**
      * Log time to Productive following the EXACT proven pattern from successful test
      */
-    async logTimeToProductive(jiraTicketId, timeMinutes, description) {
+    async logTimeToProductive(jiraTicketId, timeMinutes, description, jiraProjectName) {
         this.log(`\n📊 PRODUCTIVE INTEGRATION - ENHANCED DEBUGGING`);
         this.log(`═══════════════════════════════════════════════════════════`);
         this.log(`🎯 Ticket: ${jiraTicketId}`);
@@ -403,7 +433,8 @@ class JiraTimeLogger {
             this.log(`   ✅ Email: ${userInfo.email}`);
             // Step 3: Find project in Productive matching current project selection
             this.log(`\n📊 Step 3: Finding project in Productive...`);
-            const projectInfo = await this.findProductiveProjectForCurrentWork(credentials);
+            this.log(`   🔍 Searching for project: "${jiraProjectName || 'Unknown'}"`);
+            const projectInfo = await this.findProductiveProjectForCurrentWork(credentials, jiraProjectName);
             this.log(`   ✅ Project: ${projectInfo.name} (${projectInfo.id})`);
             // Step 4: Find service assigned to user for this project (PROVEN METHOD)
             this.log(`\n📊 Step 4: Finding appropriate service for user and project...`);
@@ -435,8 +466,10 @@ class JiraTimeLogger {
                     this.log(`   📋 Error: ${error.response.data.message}`);
                 }
             }
-            // Show output on error so user can see what went wrong
-            this.outputChannel.show(true);
+            // Show output on error so user can see what went wrong (only if logging is enabled)
+            if (this.isLoggingEnabled()) {
+                this.outputChannel.show(true);
+            }
             throw new Error(`Productive integration failed: ${error.message}`);
         }
     }
@@ -508,59 +541,187 @@ class JiraTimeLogger {
     /**
      * Find Productive project matching the selected project from dropdown (following test pattern)
      */
-    async findProductiveProjectForCurrentWork(credentials) {
+    async findProductiveProjectForCurrentWork(credentials, jiraProjectName) {
         const axios = require('axios');
         this.log(`   🔍 Finding project in Productive...`);
-        this.log(`   📋 Selected Jira project: ${this.currentProject || 'None selected'}`);
         try {
-            let projectKey = this.currentProject;
-            if (!projectKey) {
-                throw new Error('No Jira project selected');
+            // Use Jira project name if provided, otherwise fallback to current project
+            let searchTerm = jiraProjectName || this.currentProject;
+            if (!searchTerm) {
+                throw new Error('No project name available for search');
             }
-            this.log(`   🔍 Searching for Productive project matching: ${projectKey}`);
-            // Step 1: Search for specific project by name (much faster than fetching all)
-            this.log(`   📊 Searching for project: ${projectKey}`);
-            // Try exact name search first
-            const searchResponse = await axios.get(`${credentials.baseUrl}/projects?filter[name]=${encodeURIComponent(projectKey)}&page[size]=10`, {
-                headers: {
-                    'Content-Type': 'application/vnd.api+json',
-                    'X-Auth-Token': credentials.apiToken,
-                    'X-Organization-Id': credentials.organizationId
+            this.log(`   🔍 Searching for Productive project matching: "${searchTerm}"`);
+            // Step 1: Check for configured project mapping (FASTEST)
+            const config = vscode.workspace.getConfiguration('jiraTimeTracker');
+            const projectMapping = config.get('productive.projectMapping') || {};
+            const projectNameMapping = config.get('productive.projectNameMapping') || {};
+            if (projectMapping[searchTerm]) {
+                const mappedProjectId = projectMapping[searchTerm];
+                this.log(`   ✅ Found configured mapping: ${searchTerm} -> ${mappedProjectId}`);
+                // Verify the mapped project exists
+                try {
+                    const projectResponse = await axios.get(`${credentials.baseUrl}/projects/${mappedProjectId}`, {
+                        headers: {
+                            'Content-Type': 'application/vnd.api+json',
+                            'X-Auth-Token': credentials.apiToken,
+                            'X-Organization-Id': credentials.organizationId
+                        }
+                    });
+                    const project = projectResponse.data.data;
+                    this.log(`   ✅ Mapped project verified: ${project.attributes.name} (${project.id})`);
+                    return { id: project.id, name: project.attributes.name };
                 }
-            });
-            const matchingProjects = searchResponse.data.data;
-            this.log(`   📊 Found ${matchingProjects.length} matching projects`);
-            if (matchingProjects.length > 0) {
-                // Use the first exact match
-                const targetProject = matchingProjects[0];
-                this.log(`   ✅ Found project: ${targetProject.attributes.name}`);
-                return { id: targetProject.id, name: targetProject.attributes.name };
-            }
-            // Step 2: If no exact match, try broader search
-            this.log(`   📊 Trying broader search for: ${projectKey}`);
-            const broaderSearchResponse = await axios.get(`${credentials.baseUrl}/projects?page[size]=50`, {
-                headers: {
-                    'Content-Type': 'application/vnd.api+json',
-                    'X-Auth-Token': credentials.apiToken,
-                    'X-Organization-Id': credentials.organizationId
+                catch (error) {
+                    this.log(`   ⚠️ Configured project ${mappedProjectId} not found, will search manually`);
                 }
-            });
-            const allProjects = broaderSearchResponse.data.data;
-            // Find partial match
-            const targetProject = allProjects.find((p) => {
-                const projectName = p.attributes.name.toLowerCase();
-                const jiraProject = projectKey.toLowerCase();
-                return projectName.includes(jiraProject) || jiraProject.includes(projectName.split(' ')[0].toLowerCase());
-            });
-            if (targetProject) {
-                this.log(`   ✅ Found partial match: ${targetProject.attributes.name}`);
-                return { id: targetProject.id, name: targetProject.attributes.name };
             }
-            // Step 3: Fallback to first available project
-            if (allProjects.length > 0) {
-                const fallbackProject = allProjects[0];
-                this.log(`   ⚠️ No match found, using fallback: ${fallbackProject.attributes.name}`);
-                return { id: fallbackProject.id, name: fallbackProject.attributes.name };
+            // Step 1.5: Check for project name mapping (e.g., "OT" -> "office test")
+            if (projectNameMapping[searchTerm]) {
+                const mappedProjectName = projectNameMapping[searchTerm];
+                this.log(`   🔍 Found name mapping: ${searchTerm} -> "${mappedProjectName}"`);
+                // Search for the mapped project name
+                const nameSearchResponse = await axios.get(`${credentials.baseUrl}/projects?filter[name]=${encodeURIComponent(mappedProjectName)}&page[size]=10`, {
+                    headers: {
+                        'Content-Type': 'application/vnd.api+json',
+                        'X-Auth-Token': credentials.apiToken,
+                        'X-Organization-Id': credentials.organizationId
+                    }
+                });
+                const nameMatches = nameSearchResponse.data.data;
+                if (nameMatches.length > 0) {
+                    const matchedProject = nameMatches[0];
+                    this.log(`   ✅ Found project by name mapping: ${matchedProject.attributes.name} (${matchedProject.id})`);
+                    return { id: matchedProject.id, name: matchedProject.attributes.name };
+                }
+            }
+            // Step 2: Search with pagination for exact and precise matches
+            this.log(`   📊 Searching for project by name: ${searchTerm}`);
+            let foundProject = null;
+            let page = 1;
+            const pageSize = 50;
+            while (!foundProject && page <= 10) { // Limit to 10 pages to avoid infinite loop
+                this.log(`   📊 Searching page ${page}...`);
+                const searchResponse = await axios.get(`${credentials.baseUrl}/projects?page[size]=${pageSize}&page[number]=${page}`, {
+                    headers: {
+                        'Content-Type': 'application/vnd.api+json',
+                        'X-Auth-Token': credentials.apiToken,
+                        'X-Organization-Id': credentials.organizationId
+                    }
+                });
+                const projects = searchResponse.data.data;
+                if (projects.length === 0) {
+                    this.log(`   📊 No more projects found on page ${page}`);
+                    break;
+                }
+                // PRIORITY 1: Check for exact match (case-insensitive)
+                const exactMatch = projects.find((p) => p.attributes.name.toLowerCase() === searchTerm?.toLowerCase());
+                if (exactMatch) {
+                    foundProject = exactMatch;
+                    this.log(`   ✅ Found exact match: ${foundProject.attributes.name} (${foundProject.id})`);
+                    break;
+                }
+                // PRIORITY 2: Check for exact match with common variations
+                const variations = [
+                    searchTerm.toLowerCase(),
+                    searchTerm.toLowerCase() + ' project',
+                    searchTerm.toLowerCase() + ' app',
+                    searchTerm.toLowerCase() + ' application',
+                    'the ' + searchTerm.toLowerCase(),
+                    searchTerm.toLowerCase() + ' test',
+                    searchTerm.toLowerCase() + ' development'
+                ];
+                const variationMatch = projects.find((p) => {
+                    const projectName = p.attributes.name.toLowerCase();
+                    return variations.some(variation => projectName === variation);
+                });
+                if (variationMatch) {
+                    foundProject = variationMatch;
+                    this.log(`   ✅ Found variation match: ${foundProject.attributes.name} (${foundProject.id})`);
+                    break;
+                }
+                // PRIORITY 3: Check for starts with (more precise than partial)
+                const startsWithMatch = projects.find((p) => {
+                    const projectName = p.attributes.name.toLowerCase();
+                    const jiraProject = searchTerm?.toLowerCase();
+                    return projectName.startsWith(jiraProject + ' ') ||
+                        projectName.startsWith(jiraProject + '-') ||
+                        projectName.startsWith(jiraProject + '_');
+                });
+                if (startsWithMatch) {
+                    foundProject = startsWithMatch;
+                    this.log(`   ✅ Found starts-with match: ${foundProject.attributes.name} (${foundProject.id})`);
+                    break;
+                }
+                // PRIORITY 4: Check for contains (last resort - more restrictive)
+                const containsMatch = projects.find((p) => {
+                    const projectName = p.attributes.name.toLowerCase();
+                    const jiraProject = searchTerm?.toLowerCase() || '';
+                    // Only match if the project name contains the Jira key AND is reasonably close in length
+                    return projectName.includes(jiraProject) &&
+                        projectName.length < jiraProject.length + 15; // Limit to reasonable matches
+                });
+                if (containsMatch) {
+                    foundProject = containsMatch;
+                    this.log(`   ⚠️ Found contains match: ${foundProject.attributes.name} (${foundProject.id})`);
+                    break;
+                }
+                page++;
+            }
+            if (foundProject) {
+                return { id: foundProject.id, name: foundProject.attributes.name };
+            }
+            // Step 3: If no match found, offer to configure mapping
+            this.log(`   ⚠️ No project found for "${searchTerm}". Would you like to configure a mapping?`);
+            const action = await vscode.window.showQuickPick([
+                'Search all projects',
+                'Configure project mapping',
+                'Use first available project'
+            ], {
+                placeHolder: 'Choose an action'
+            });
+            if (action === 'Configure project mapping') {
+                // Get all projects for selection
+                this.log(`   📊 Getting all projects for mapping configuration...`);
+                const allProjectsResponse = await axios.get(`${credentials.baseUrl}/projects?page[size]=200`, {
+                    headers: {
+                        'Content-Type': 'application/vnd.api+json',
+                        'X-Auth-Token': credentials.apiToken,
+                        'X-Organization-Id': credentials.organizationId
+                    }
+                });
+                const allProjects = allProjectsResponse.data.data;
+                const projectOptions = allProjects.map((project) => ({
+                    label: project.attributes.name,
+                    description: `ID: ${project.id}`,
+                    detail: project
+                }));
+                const selected = await vscode.window.showQuickPick(projectOptions, {
+                    placeHolder: `Select Productive project for Jira project "${searchTerm}"`
+                });
+                if (selected) {
+                    const selectedProject = selected.detail;
+                    this.log(`   ✅ User selected: ${selected.label} (${selectedProject.id})`);
+                    // Save the mapping
+                    projectMapping[searchTerm] = selectedProject.id;
+                    await config.update('productive.projectMapping', projectMapping, vscode.ConfigurationTarget.Global);
+                    this.log(`   💾 Saved mapping: ${searchTerm} -> ${selectedProject.id}`);
+                    return { id: selectedProject.id, name: selected.label };
+                }
+            }
+            else if (action === 'Search all projects') {
+                // Get first available project as fallback
+                const fallbackResponse = await axios.get(`${credentials.baseUrl}/projects?page[size]=1`, {
+                    headers: {
+                        'Content-Type': 'application/vnd.api+json',
+                        'X-Auth-Token': credentials.apiToken,
+                        'X-Organization-Id': credentials.organizationId
+                    }
+                });
+                if (fallbackResponse.data.data.length > 0) {
+                    const fallbackProject = fallbackResponse.data.data[0];
+                    this.log(`   ⚠️ Using fallback: ${fallbackProject.attributes.name} (${fallbackProject.id})`);
+                    return { id: fallbackProject.id, name: fallbackProject.attributes.name };
+                }
             }
             throw new Error('No projects found in Productive');
         }
@@ -707,12 +868,8 @@ class JiraTimeLogger {
                 const serviceId = mostRecentEntry.relationships?.service?.data?.id;
                 if (serviceId) {
                     let serviceName = 'Recent Service';
-                    if (recentServicesResponse.data.included) {
-                        const serviceData = recentServicesResponse.data.included.find((inc) => inc.type === 'services' && inc.id === serviceId);
-                        if (serviceData) {
-                            serviceName = serviceData.attributes.name;
-                        }
-                    }
+                    // Note: Service name not available in response, using ID
+                    serviceName = `Service ${serviceId}`;
                     this.log(`   ✅ Using most recent service: ${serviceName}`);
                     return { serviceId, serviceName };
                 }
@@ -749,58 +906,73 @@ class JiraTimeLogger {
         const axios = require('axios');
         this.log(`   🛠️ Finding appropriate service for user and project...`);
         try {
-            // First try: Check for configured default service ID in VS Code settings
-            const config = vscode.workspace.getConfiguration('jiraTimeTracker');
-            const defaultServiceId = config.get('productive.defaultServiceId');
-            if (defaultServiceId) {
-                try {
-                    this.log(`   🔍 Checking configured default service: ${defaultServiceId}`);
-                    // Verify the service exists and user has access
-                    const serviceResponse = await axios.get(`${credentials.baseUrl}/services/${defaultServiceId}`, {
-                        headers: {
-                            'Content-Type': 'application/vnd.api+json',
-                            'X-Auth-Token': credentials.apiToken,
-                            'X-Organization-Id': credentials.organizationId
-                        }
-                    });
-                    const serviceName = serviceResponse.data.data.attributes.name;
-                    this.log(`   ✅ Using configured default service: ${serviceName} (${defaultServiceId})`);
-                    return {
-                        serviceId: defaultServiceId,
-                        serviceName: serviceName,
-                        confidence: 'HIGH (configured)'
-                    };
-                }
-                catch (error) {
-                    this.log(`   ⚠️ Configured service ${defaultServiceId} not accessible, falling back to discovery...`);
-                }
-            }
-            this.log(`   🔍 No configured service found, starting intelligent service discovery...`);
             // Step 1: Check if user has logged time to this project before (existing user method)
             this.log(`   📊 Checking if user has logged time to this project before...`);
-            const timeEntriesResponse = await axios.get(`${credentials.baseUrl}/time_entries?filter[person_id]=${personId}&filter[project_id]=${projectId}&page[size]=50&include=service`, {
+            let timeEntriesResponse = await axios.get(`${credentials.baseUrl}/time_entries?filter[person_id]=${personId}&filter[project_id]=${projectId}&page[size]=50&include=service`, {
                 headers: {
                     'Content-Type': 'application/vnd.api+json',
                     'X-Auth-Token': credentials.apiToken,
                     'X-Organization-Id': credentials.organizationId
                 }
             });
-            const timeEntries = timeEntriesResponse.data.data || [];
+            let timeEntries = timeEntriesResponse.data.data || [];
+            this.log(`   📊 API Response structure: ${JSON.stringify(Object.keys(timeEntriesResponse))}`);
+            this.log(`   📊 Data type: ${typeof timeEntriesResponse.data}`);
+            this.log(`   📊 Data keys: ${timeEntriesResponse.data ? Object.keys(timeEntriesResponse.data) : 'undefined'}`);
             this.log(`   📊 Found ${timeEntries.length} previous time entries by this user`);
+            // Debug: Log the actual structure
+            if (timeEntries.length > 0) {
+                this.log(`   🔍 Sample entry structure:`);
+                this.log(`   📋 Entry ID: ${timeEntries[0].id}`);
+                this.log(`   📋 Date: ${timeEntries[0].attributes.date}`);
+                this.log(`   📋 Time: ${timeEntries[0].attributes.time}`);
+                this.log(`   📋 Note: ${timeEntries[0].attributes.note}`);
+                this.log(`   📋 Service ID: ${timeEntries[0].relationships?.service?.data?.id}`);
+                this.log(`   📋 Available relationships: ${Object.keys(timeEntries[0].relationships || {}).join(', ')}`);
+            }
+            // Approach 2: If no entries found, try without project filter (user's recent entries)
+            if (timeEntries.length === 0) {
+                try {
+                    this.log(`   📊 Trying approach 2: User's recent entries without project filter...`);
+                    const userEntriesResponse = await axios.get(`${credentials.baseUrl}/time_entries?filter[person_id]=${personId}&page[size]=100&include=service`, {
+                        headers: {
+                            'Content-Type': 'application/vnd.api+json',
+                            'X-Auth-Token': credentials.apiToken,
+                            'X-Organization-Id': credentials.organizationId
+                        }
+                    });
+                    const userEntries = userEntriesResponse.data.data || [];
+                    this.log(`   📊 Approach 2: Found ${userEntries.length} user entries total`);
+                    // Note: Cannot filter by project since project relationship is not included
+                    // Just use all user entries for service analysis
+                    if (userEntries.length > 0) {
+                        timeEntries = userEntries;
+                        timeEntriesResponse = userEntriesResponse;
+                        this.log(`   📊 Approach 2: Using all user entries for service analysis`);
+                    }
+                }
+                catch (error) {
+                    this.log(`   ⚠️ Approach 2 failed: ${error.message}`);
+                }
+            }
             if (timeEntries.length > 0) {
                 // User has logged time before - use historical analysis (PROVEN HIGH CONFIDENCE METHOD)
                 this.log(`   ✅ User has previous time entries. Using historical analysis...`);
-                const serviceIds = new Set(timeEntries.map((entry) => entry.relationships?.service?.data?.id).filter(Boolean));
+                // Extract service IDs from the entries
+                const serviceIds = new Set(timeEntries.map((entry) => {
+                    const serviceId = entry.relationships?.service?.data?.id;
+                    if (serviceId) {
+                        this.log(`   📋 Found service ID: ${serviceId} in entry ${entry.id}`);
+                    }
+                    return serviceId;
+                }).filter(Boolean));
+                this.log(`   📊 Unique service IDs found: ${Array.from(serviceIds).join(', ')}`);
                 if (serviceIds.size === 1) {
                     // User always uses the same service - highest confidence
                     const serviceId = Array.from(serviceIds)[0];
                     let serviceName = 'Unknown Service';
-                    if (timeEntriesResponse.data.included) {
-                        const serviceData = timeEntriesResponse.data.included.find((inc) => inc.type === 'services' && inc.id === serviceId);
-                        if (serviceData) {
-                            serviceName = serviceData.attributes.name;
-                        }
-                    }
+                    // Note: Service name not available in response, using ID
+                    serviceName = `Service ${serviceId}`;
                     this.log(`   🎯 User consistently uses: ${serviceName} (${serviceId})`);
                     return {
                         serviceId: serviceId,
@@ -819,12 +991,8 @@ class JiraTimeLogger {
                     });
                     const mostUsedServiceId = Object.keys(serviceCounts).reduce((a, b) => serviceCounts[a] > serviceCounts[b] ? a : b);
                     let serviceName = 'Unknown Service';
-                    if (timeEntriesResponse.data.included) {
-                        const serviceData = timeEntriesResponse.data.included.find((inc) => inc.type === 'services' && inc.id === mostUsedServiceId);
-                        if (serviceData) {
-                            serviceName = serviceData.attributes.name;
-                        }
-                    }
+                    // Note: Service name not available in response, using ID
+                    serviceName = `Service ${mostUsedServiceId}`;
                     this.log(`   🎯 User's most used service: ${serviceName} (${mostUsedServiceId})`);
                     return {
                         serviceId: mostUsedServiceId,
@@ -842,50 +1010,43 @@ class JiraTimeLogger {
                     'X-Organization-Id': credentials.organizationId
                 }
             });
-            if (projectTimeEntriesResponse.data.data.length > 0) {
+            if (projectTimeEntriesResponse.data.data && projectTimeEntriesResponse.data.data.length > 0) {
                 this.log(`   📊 Found ${projectTimeEntriesResponse.data.data.length} time entries in this project`);
                 // Extract unique services used in this project
                 const serviceIds = new Set(projectTimeEntriesResponse.data.data.map((entry) => entry.relationships?.service?.data?.id).filter(Boolean));
                 this.log(`   🎯 Found ${serviceIds.size} unique services used in this project`);
-                // Get service details from included data
-                if (projectTimeEntriesResponse.data.included) {
-                    const serviceDetails = projectTimeEntriesResponse.data.included
-                        .filter((item) => item.type === 'services')
-                        .filter((service) => serviceIds.has(service.id));
-                    this.log('   🛠️ Services used in this project:');
-                    serviceDetails.forEach((service) => {
-                        this.log(`      • ${service.attributes.name} (${service.id})`);
-                    });
-                    if (serviceDetails.length === 1) {
-                        // Perfect! Project uses exactly one service
-                        const service = serviceDetails[0];
-                        this.log(`   ✅ Perfect! This project uses exactly one service: ${service.attributes.name}`);
-                        return {
-                            serviceId: service.id,
-                            serviceName: service.attributes.name,
-                            confidence: 'HIGH (project uses single service)'
-                        };
-                    }
-                    else if (serviceDetails.length > 1) {
-                        // Multiple services - find most commonly used
-                        const serviceCounts = {};
-                        projectTimeEntriesResponse.data.data.forEach((entry) => {
-                            const serviceId = entry.relationships?.service?.data?.id;
-                            if (serviceId) {
-                                serviceCounts[serviceId] = (serviceCounts[serviceId] || 0) + 1;
-                            }
-                        });
-                        const mostUsedServiceId = Object.keys(serviceCounts).reduce((a, b) => serviceCounts[a] > serviceCounts[b] ? a : b);
-                        const mostUsedService = serviceDetails.find((s) => s.id === mostUsedServiceId);
-                        if (mostUsedService) {
-                            this.log(`   🎯 Multiple services available. Suggesting most used: ${mostUsedService.attributes.name}`);
-                            return {
-                                serviceId: mostUsedService.id,
-                                serviceName: mostUsedService.attributes.name,
-                                confidence: 'MEDIUM (most used in project)'
-                            };
+                // Note: Service details not available in response, using IDs
+                this.log('   🛠️ Services used in this project:');
+                Array.from(serviceIds).forEach((serviceId) => {
+                    const serviceIdStr = serviceId;
+                    this.log(`      • Service ${serviceIdStr} (${serviceIdStr})`);
+                });
+                if (serviceIds.size === 1) {
+                    // Perfect! Project uses exactly one service
+                    const serviceId = Array.from(serviceIds)[0];
+                    this.log(`   ✅ Perfect! This project uses exactly one service: Service ${serviceId}`);
+                    return {
+                        serviceId: serviceId,
+                        serviceName: `Service ${serviceId}`,
+                        confidence: 'HIGH (project uses single service)'
+                    };
+                }
+                else if (serviceIds.size > 1) {
+                    // Multiple services - find most commonly used
+                    const serviceCounts = {};
+                    projectTimeEntriesResponse.data.forEach((entry) => {
+                        const serviceId = entry.relationships?.service?.data?.id;
+                        if (serviceId) {
+                            serviceCounts[serviceId] = (serviceCounts[serviceId] || 0) + 1;
                         }
-                    }
+                    });
+                    const mostUsedServiceId = Object.keys(serviceCounts).reduce((a, b) => serviceCounts[a] > serviceCounts[b] ? a : b);
+                    this.log(`   🎯 Multiple services available. Suggesting most used: Service ${mostUsedServiceId}`);
+                    return {
+                        serviceId: mostUsedServiceId,
+                        serviceName: `Service ${mostUsedServiceId}`,
+                        confidence: 'MEDIUM (most used in project)'
+                    };
                 }
             }
             // Step 3: Fallback - no time entries in project, get any available service
@@ -920,7 +1081,11 @@ class JiraTimeLogger {
     async createProductiveTimeEntryExact(credentials, personId, projectId, serviceId, timeMinutes, description, jiraTicketId) {
         const axios = require('axios');
         try {
-            const entryDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+            // Use local timezone instead of UTC
+            const now = new Date();
+            const entryDate = now.getFullYear() + '-' +
+                String(now.getMonth() + 1).padStart(2, '0') + '-' +
+                String(now.getDate()).padStart(2, '0'); // YYYY-MM-DD in local timezone
             this.log(`   💾 Creating time entry: ${timeMinutes} minutes on ${entryDate}...`);
             this.log(`   📋 API URL: ${credentials.baseUrl}/time_entries`);
             this.log(`   📋 Headers: X-Auth-Token: ${credentials.apiToken ? 'Present' : 'Missing'}, X-Organization-Id: ${credentials.organizationId}`);
@@ -1155,15 +1320,15 @@ class JiraTimeLogger {
                     'X-Organization-Id': credentials.organizationId
                 }
             });
-            const userTimeEntries = userServicesResponse.data.data;
+            const userTimeEntries = userServicesResponse.data.data || [];
             const userServiceIds = new Set(userTimeEntries.map((entry) => entry.relationships?.service?.data?.id).filter(Boolean));
             this.log(`   ✅ User has logged time with ${userServiceIds.size} different services`);
             if (userServiceIds.size > 0) {
                 this.log(`   📋 User's services from time entries:`);
                 Array.from(userServiceIds).forEach((serviceId, index) => {
                     const serviceIdStr = serviceId;
-                    const serviceDetails = userServicesResponse.data.included?.find((item) => item.type === 'services' && item.id === serviceIdStr);
-                    const serviceName = serviceDetails?.attributes.name || 'Unknown';
+                    // Note: Service name not available in response, using ID
+                    const serviceName = `Service ${serviceIdStr}`;
                     this.log(`      ${index + 1}. ${serviceName} (${serviceIdStr})`);
                 });
             }
@@ -1187,7 +1352,10 @@ class JiraTimeLogger {
                     this.log(`   📋 Error: ${error.response.data.message}`);
                 }
             }
-            this.outputChannel.show(true);
+            // Show output on error (only if logging is enabled)
+            if (this.isLoggingEnabled()) {
+                this.outputChannel.show(true);
+            }
         }
     }
     /**
@@ -1218,7 +1386,10 @@ class JiraTimeLogger {
         this.log(`   PRODUCTIVE_API_TOKEN: ${process.env.PRODUCTIVE_API_TOKEN ? 'Set' : 'Not set'}`);
         this.log(`   PRODUCTIVE_BASE_URL: ${process.env.PRODUCTIVE_BASE_URL || 'Not set'}`);
         this.log(`   PRODUCTIVE_PERSON_ID: ${process.env.PRODUCTIVE_PERSON_ID || 'Not set'}`);
-        this.outputChannel.show(true);
+        // Show output channel (only if logging is enabled)
+        if (this.isLoggingEnabled()) {
+            this.outputChannel.show(true);
+        }
     }
 }
 exports.JiraTimeLogger = JiraTimeLogger;

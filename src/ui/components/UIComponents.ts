@@ -1183,7 +1183,7 @@ export class JavaScriptComponent extends BaseComponent {
                         clearSignInForm();
                         
                         // Don't auto-load projects - let user click the button when needed
-                        showNotification('Signed in successfully! Click "Load Projects" to start.', 'success');
+                        // showNotification('Signed in successfully! Click "Load Projects" to start.', 'success');
                     } else {
                         // Show sign in form and clear everything
                         if (currentUserDisplay) currentUserDisplay.style.display = 'none';

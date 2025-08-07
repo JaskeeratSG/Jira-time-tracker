@@ -2,7 +2,7 @@
     "name": "jira-time-tracker",
     "displayName": "JIRA Time Tracker",
     "description": "Track and log time to JIRA tickets",
-    "version": "0.0.1",
+    "version": "0.0.1-test-without-logs",
     "engines": {
         "vscode": "^1.60.0"
     },
@@ -37,7 +37,9 @@
         "onCommand:jira-time-tracker.show-productive-logs",
         "onCommand:jira-time-tracker.test-output-channel",
         "onCommand:jira-time-tracker.test-error-logging",
-        "onCommand:jira-time-tracker.check-productive-credentials"
+        "onCommand:jira-time-tracker.check-productive-credentials",
+        "onCommand:jira-time-tracker.toggle-logging",
+        "onCommand:jira-time-tracker.show-logging-status"
     ],
     "main": "./out/extension.js",
     "contributes": {
@@ -177,6 +179,14 @@
             {
                 "command": "jira-time-tracker.check-productive-credentials",
                 "title": "Check Productive Credentials Source"
+            },
+            {
+                "command": "jira-time-tracker.toggle-logging",
+                "title": "JIRA: Toggle Debug Logging"
+            },
+            {
+                "command": "jira-time-tracker.show-logging-status",
+                "title": "JIRA: Show Logging Status"
             }
         ],
         "configuration": {
@@ -234,6 +244,11 @@
                     "type": "string",
                     "default": "",
                     "description": "Your default Productive service ID (required for time logging)"
+                },
+                "jiraTimeTracker.enableLogging": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enable debug logging for Jira Time Tracker (use commands to toggle)"
                 }
             }
         },

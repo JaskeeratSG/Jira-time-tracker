@@ -68,11 +68,18 @@ export class ProductiveService {
      * Log message to output channel if available
      */
     private log(message: string): void {
-        // Output channel disabled for time logging
-        // if (this.outputChannel) {
-        //     this.outputChannel.appendLine(message);
-        // }
-        // console.log(message);
+        // Check if logging is enabled via configuration
+        const config = vscode.workspace.getConfiguration('jiraTimeTracker');
+        const enableLogging = config.get<boolean>('enableLogging', false);
+        
+        if (!enableLogging) {
+            return; // Silent mode - no output
+        }
+        
+        if (this.outputChannel) {
+            this.outputChannel.appendLine(message);
+        }
+        console.log(message);
     }
 
     /**
@@ -347,7 +354,14 @@ export class ProductiveService {
             const user = await this.getAuthenticatedUser();
             this.log(`✅ Authenticated user: ${user.name} (${user.email})`);
             
-            const entryDate = date || new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+            // Use local timezone instead of UTC
+            const getLocalDateString = () => {
+                const now = new Date();
+                return now.getFullYear() + '-' + 
+                       String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+                       String(now.getDate()).padStart(2, '0'); // YYYY-MM-DD in local timezone
+            };
+            const entryDate = date || getLocalDateString(); // YYYY-MM-DD format
             this.log(`📅 Using entry date: ${entryDate}`);
 
             const timeEntry = {
@@ -482,7 +496,13 @@ export class ProductiveService {
             }
 
             const serviceId = services[0].serviceId;
-            const dateString = date ? date.toISOString().split('T')[0] : undefined;
+            // Use local timezone instead of UTC
+            const getLocalDateString = (date: Date) => {
+                return date.getFullYear() + '-' + 
+                       String(date.getMonth() + 1).padStart(2, '0') + '-' + 
+                       String(date.getDate()).padStart(2, '0'); // YYYY-MM-DD in local timezone
+            };
+            const dateString = date ? getLocalDateString(date) : undefined;
 
             return this.logMyTimeEntry(projectId, serviceId, timeInMinutes, dateString, note, ticketId);
         } catch (error) {

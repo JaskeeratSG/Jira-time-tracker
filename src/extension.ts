@@ -995,7 +995,46 @@ export function activate(context: vscode.ExtensionContext) {
         //     })
         // );
 
-        
+        // Toggle logging command
+        context.subscriptions.push(
+            vscode.commands.registerCommand('jira-time-tracker.toggle-logging', async () => {
+                try {
+                    const config = vscode.workspace.getConfiguration('jiraTimeTracker');
+                    const currentLogging = config.get<boolean>('enableLogging', false);
+                    const newLogging = !currentLogging;
+                    
+                    await config.update('enableLogging', newLogging, vscode.ConfigurationTarget.Global);
+                    
+                    const status = newLogging ? 'enabled' : 'disabled';
+                    vscode.window.showInformationMessage(`Jira Time Tracker logging ${status}`);
+                    
+                    if (outputChannel) {
+                        outputChannel.appendLine(`🔧 Logging ${status} via command`);
+                    }
+                } catch (error) {
+                    vscode.window.showErrorMessage(`Failed to toggle logging: ${error}`);
+                }
+            })
+        );
+
+        // Show logging status command
+        context.subscriptions.push(
+            vscode.commands.registerCommand('jira-time-tracker.show-logging-status', async () => {
+                try {
+                    const config = vscode.workspace.getConfiguration('jiraTimeTracker');
+                    const currentLogging = config.get<boolean>('enableLogging', false);
+                    
+                    const status = currentLogging ? 'enabled' : 'disabled';
+                    vscode.window.showInformationMessage(`Jira Time Tracker logging is currently ${status}`);
+                    
+                    if (outputChannel) {
+                        outputChannel.appendLine(`🔧 Current logging status: ${status}`);
+                    }
+                } catch (error) {
+                    vscode.window.showErrorMessage(`Failed to get logging status: ${error}`);
+                }
+            })
+        );
 
         // outputChannel.appendLine('Extension activated successfully');
 
