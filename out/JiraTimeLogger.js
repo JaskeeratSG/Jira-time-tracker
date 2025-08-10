@@ -370,7 +370,7 @@ class JiraTimeLogger {
             });
             if (response.status === 200) {
                 const issue = response.data;
-                const projectName = issue.fields.project.name;
+                const projectName = issue.fields.project.name?.trim() || '';
                 const projectKey = issue.fields.project.key;
                 this.log(`   ✅ Ticket found: ${ticketId}`);
                 this.log(`   📋 Project: ${projectName} (${projectKey})`);
@@ -434,8 +434,41 @@ class JiraTimeLogger {
             // Step 3: Find project in Productive matching current project selection
             this.log(`\n📊 Step 3: Finding project in Productive...`);
             this.log(`   🔍 Searching for project: "${jiraProjectName || 'Unknown'}"`);
-            const projectInfo = await this.findProductiveProjectForCurrentWork(credentials, jiraProjectName);
-            this.log(`   ✅ Project: ${projectInfo.name} (${projectInfo.id})`);
+            let projectInfo;
+            try {
+                projectInfo = await this.findProductiveProjectForCurrentWork(credentials, jiraProjectName);
+                this.log(`   ✅ Project: ${projectInfo.name} (${projectInfo.id})`);
+            }
+            catch (projectError) {
+                this.log(`   ⚠️ Project not found: ${projectError.message}`);
+                this.log(`   🔄 Using fallback: logging time to previously used service...`);
+                // Get previously used service as fallback
+                const fallbackService = await this.getPreviouslyUsedService(credentials, userInfo.personId);
+                if (!fallbackService) {
+                    throw new Error('No project found and no fallback service available');
+                }
+                // Create a dummy project for fallback (using first available project)
+                const fallbackProjectResponse = await require('axios').get(`${credentials.baseUrl}/projects?page[size]=1`, {
+                    headers: {
+                        'Content-Type': 'application/vnd.api+json',
+                        'X-Auth-Token': credentials.apiToken,
+                        'X-Organization-Id': credentials.organizationId
+                    }
+                });
+                if (fallbackProjectResponse.data.data.length === 0) {
+                    throw new Error('No projects available in Productive');
+                }
+                const fallbackProject = fallbackProjectResponse.data.data[0];
+                projectInfo = { id: fallbackProject.id, name: fallbackProject.attributes.name };
+                this.log(`   ⚠️ Using fallback project: ${projectInfo.name} (${projectInfo.id})`);
+                this.log(`   ⚠️ Using fallback service: ${fallbackService.serviceName} (${fallbackService.serviceId})`);
+                // Skip to time entry creation with fallback service
+                const timeDescription = description || `${jiraTicketId}: Time logged via VS Code extension (FALLBACK - Project not found)`;
+                this.log(`   📝 Using fallback description: ${timeDescription}`);
+                await this.createProductiveTimeEntryExact(credentials, userInfo.personId, projectInfo.id, fallbackService.serviceId, timeMinutes, timeDescription, jiraTicketId);
+                this.log(`   ✅ Productive time logged (FALLBACK): ${timeMinutes} minutes to project ${projectInfo.name} with service ${fallbackService.serviceName}`);
+                return;
+            }
             // Step 4: Find service assigned to user for this project (PROVEN METHOD)
             this.log(`\n📊 Step 4: Finding appropriate service for user and project...`);
             const serviceInfo = await this.findServiceForUserProject(credentials, userInfo.personId, projectInfo.id);
@@ -539,7 +572,7 @@ class JiraTimeLogger {
         }
     }
     /**
-     * Find Productive project matching the selected project from dropdown (following test pattern)
+     * Find Productive project matching the selected project from dropdown using intelligent discovery
      */
     async findProductiveProjectForCurrentWork(credentials, jiraProjectName) {
         const axios = require('axios');
@@ -550,56 +583,17 @@ class JiraTimeLogger {
             if (!searchTerm) {
                 throw new Error('No project name available for search');
             }
-            this.log(`   🔍 Searching for Productive project matching: "${searchTerm}"`);
-            // Step 1: Check for configured project mapping (FASTEST)
-            const config = vscode.workspace.getConfiguration('jiraTimeTracker');
-            const projectMapping = config.get('productive.projectMapping') || {};
-            const projectNameMapping = config.get('productive.projectNameMapping') || {};
-            if (projectMapping[searchTerm]) {
-                const mappedProjectId = projectMapping[searchTerm];
-                this.log(`   ✅ Found configured mapping: ${searchTerm} -> ${mappedProjectId}`);
-                // Verify the mapped project exists
-                try {
-                    const projectResponse = await axios.get(`${credentials.baseUrl}/projects/${mappedProjectId}`, {
-                        headers: {
-                            'Content-Type': 'application/vnd.api+json',
-                            'X-Auth-Token': credentials.apiToken,
-                            'X-Organization-Id': credentials.organizationId
-                        }
-                    });
-                    const project = projectResponse.data.data;
-                    this.log(`   ✅ Mapped project verified: ${project.attributes.name} (${project.id})`);
-                    return { id: project.id, name: project.attributes.name };
-                }
-                catch (error) {
-                    this.log(`   ⚠️ Configured project ${mappedProjectId} not found, will search manually`);
-                }
-            }
-            // Step 1.5: Check for project name mapping (e.g., "OT" -> "office test")
-            if (projectNameMapping[searchTerm]) {
-                const mappedProjectName = projectNameMapping[searchTerm];
-                this.log(`   🔍 Found name mapping: ${searchTerm} -> "${mappedProjectName}"`);
-                // Search for the mapped project name
-                const nameSearchResponse = await axios.get(`${credentials.baseUrl}/projects?filter[name]=${encodeURIComponent(mappedProjectName)}&page[size]=10`, {
-                    headers: {
-                        'Content-Type': 'application/vnd.api+json',
-                        'X-Auth-Token': credentials.apiToken,
-                        'X-Organization-Id': credentials.organizationId
-                    }
-                });
-                const nameMatches = nameSearchResponse.data.data;
-                if (nameMatches.length > 0) {
-                    const matchedProject = nameMatches[0];
-                    this.log(`   ✅ Found project by name mapping: ${matchedProject.attributes.name} (${matchedProject.id})`);
-                    return { id: matchedProject.id, name: matchedProject.attributes.name };
-                }
-            }
-            // Step 2: Search with pagination for exact and precise matches
-            this.log(`   📊 Searching for project by name: ${searchTerm}`);
+            // Clean the search term - trim whitespace and normalize
+            const cleanSearchTerm = searchTerm.trim();
+            this.log(`   🔍 Searching for Productive project matching: "${cleanSearchTerm}"`);
+            // Search with pagination for exact and precise matches
+            this.log(`   📊 Searching for project by name: ${cleanSearchTerm}`);
             let foundProject = null;
+            let bestMatch = null;
+            let bestMatchScore = 0;
             let page = 1;
             const pageSize = 50;
-            while (!foundProject && page <= 10) { // Limit to 10 pages to avoid infinite loop
+            while (page <= 10) {
                 this.log(`   📊 Searching page ${page}...`);
                 const searchResponse = await axios.get(`${credentials.baseUrl}/projects?page[size]=${pageSize}&page[number]=${page}`, {
                     headers: {
@@ -613,8 +607,8 @@ class JiraTimeLogger {
                     this.log(`   📊 No more projects found on page ${page}`);
                     break;
                 }
-                // PRIORITY 1: Check for exact match (case-insensitive)
-                const exactMatch = projects.find((p) => p.attributes.name.toLowerCase() === searchTerm?.toLowerCase());
+                // PRIORITY 1: Check for exact match (case-insensitive, trimmed)
+                const exactMatch = projects.find((p) => p.attributes.name.toLowerCase().trim() === cleanSearchTerm.toLowerCase());
                 if (exactMatch) {
                     foundProject = exactMatch;
                     this.log(`   ✅ Found exact match: ${foundProject.attributes.name} (${foundProject.id})`);
@@ -622,16 +616,16 @@ class JiraTimeLogger {
                 }
                 // PRIORITY 2: Check for exact match with common variations
                 const variations = [
-                    searchTerm.toLowerCase(),
-                    searchTerm.toLowerCase() + ' project',
-                    searchTerm.toLowerCase() + ' app',
-                    searchTerm.toLowerCase() + ' application',
-                    'the ' + searchTerm.toLowerCase(),
-                    searchTerm.toLowerCase() + ' test',
-                    searchTerm.toLowerCase() + ' development'
+                    cleanSearchTerm.toLowerCase(),
+                    cleanSearchTerm.toLowerCase() + ' project',
+                    cleanSearchTerm.toLowerCase() + ' app',
+                    cleanSearchTerm.toLowerCase() + ' application',
+                    'the ' + cleanSearchTerm.toLowerCase(),
+                    cleanSearchTerm.toLowerCase() + ' test',
+                    cleanSearchTerm.toLowerCase() + ' development'
                 ];
                 const variationMatch = projects.find((p) => {
-                    const projectName = p.attributes.name.toLowerCase();
+                    const projectName = p.attributes.name.toLowerCase().trim();
                     return variations.some(variation => projectName === variation);
                 });
                 if (variationMatch) {
@@ -641,8 +635,8 @@ class JiraTimeLogger {
                 }
                 // PRIORITY 3: Check for starts with (more precise than partial)
                 const startsWithMatch = projects.find((p) => {
-                    const projectName = p.attributes.name.toLowerCase();
-                    const jiraProject = searchTerm?.toLowerCase();
+                    const projectName = p.attributes.name.toLowerCase().trim();
+                    const jiraProject = cleanSearchTerm.toLowerCase();
                     return projectName.startsWith(jiraProject + ' ') ||
                         projectName.startsWith(jiraProject + '-') ||
                         projectName.startsWith(jiraProject + '_');
@@ -652,82 +646,165 @@ class JiraTimeLogger {
                     this.log(`   ✅ Found starts-with match: ${foundProject.attributes.name} (${foundProject.id})`);
                     break;
                 }
-                // PRIORITY 4: Check for contains (last resort - more restrictive)
-                const containsMatch = projects.find((p) => {
-                    const projectName = p.attributes.name.toLowerCase();
-                    const jiraProject = searchTerm?.toLowerCase() || '';
-                    // Only match if the project name contains the Jira key AND is reasonably close in length
-                    return projectName.includes(jiraProject) &&
-                        projectName.length < jiraProject.length + 15; // Limit to reasonable matches
+                // PRIORITY 4: Enhanced similarity scoring for all projects
+                projects.forEach((p) => {
+                    const projectName = p.attributes.name.toLowerCase().trim();
+                    const searchTermLower = cleanSearchTerm.toLowerCase();
+                    // Calculate similarity score
+                    let score = 0;
+                    // Exact substring match (highest priority)
+                    if (projectName.includes(searchTermLower)) {
+                        score += 50;
+                        // Bonus for exact word match
+                        const words = projectName.split(/\s+/);
+                        const searchWords = searchTermLower.split(/\s+/);
+                        const matchingWords = searchWords.filter(word => words.some((projectWord) => projectWord.includes(word)));
+                        score += matchingWords.length * 20;
+                        // Bonus for length similarity
+                        const lengthDiff = Math.abs(projectName.length - searchTermLower.length);
+                        if (lengthDiff <= 5)
+                            score += 10;
+                        else if (lengthDiff <= 10)
+                            score += 5;
+                    }
+                    // Enhanced word-based matching (NEW)
+                    const projectWords = projectName.split(/\s+/);
+                    const searchWords = searchTermLower.split(/\s+/);
+                    // Check for partial word matches (e.g., "chest" in "chest group ltd")
+                    const partialMatches = searchWords.filter((searchWord) => projectWords.some((projectWord) => projectWord.includes(searchWord) || searchWord.includes(projectWord)));
+                    if (partialMatches.length > 0) {
+                        score += partialMatches.length * 25; // Increased from 15 to 25
+                        // Bonus for consecutive word matches
+                        let consecutiveBonus = 0;
+                        for (let i = 0; i < searchWords.length - 1; i++) {
+                            const currentWord = searchWords[i];
+                            const nextWord = searchWords[i + 1];
+                            const currentIndex = projectWords.findIndex((pw) => pw.includes(currentWord) || currentWord.includes(pw));
+                            const nextIndex = projectWords.findIndex((pw) => pw.includes(nextWord) || nextWord.includes(pw));
+                            if (currentIndex !== -1 && nextIndex !== -1 &&
+                                Math.abs(nextIndex - currentIndex) <= 2) {
+                                consecutiveBonus += 10;
+                            }
+                        }
+                        score += consecutiveBonus;
+                    }
+                    // Check for acronyms or abbreviations
+                    const searchAcronym = searchWords.map((word) => word[0]).join('').toLowerCase();
+                    const projectAcronym = projectWords.map((word) => word[0]).join('').toLowerCase();
+                    if (searchAcronym === projectAcronym && searchAcronym.length >= 2) {
+                        score += 30;
+                    }
+                    // Check for common prefixes/suffixes
+                    const commonPrefixes = ['the', 'new', 'old', 'big', 'small'];
+                    const commonSuffixes = ['ltd', 'inc', 'corp', 'company', 'group'];
+                    if (commonPrefixes.some(prefix => projectName.startsWith(prefix + ' ') && searchTermLower.startsWith(prefix + ' '))) {
+                        score += 15;
+                    }
+                    if (commonSuffixes.some(suffix => projectName.endsWith(' ' + suffix) && searchTermLower.endsWith(' ' + suffix))) {
+                        score += 15;
+                    }
+                    // Update best match if this score is higher
+                    if (score > bestMatchScore) {
+                        bestMatchScore = score;
+                        bestMatch = p;
+                    }
                 });
-                if (containsMatch) {
-                    foundProject = containsMatch;
-                    this.log(`   ⚠️ Found contains match: ${foundProject.attributes.name} (${foundProject.id})`);
-                    break;
-                }
                 page++;
             }
+            // If we found an exact match, use it
             if (foundProject) {
                 return { id: foundProject.id, name: foundProject.attributes.name };
             }
-            // Step 3: If no match found, offer to configure mapping
-            this.log(`   ⚠️ No project found for "${searchTerm}". Would you like to configure a mapping?`);
-            const action = await vscode.window.showQuickPick([
-                'Search all projects',
-                'Configure project mapping',
-                'Use first available project'
-            ], {
-                placeHolder: 'Choose an action'
-            });
-            if (action === 'Configure project mapping') {
-                // Get all projects for selection
-                this.log(`   📊 Getting all projects for mapping configuration...`);
-                const allProjectsResponse = await axios.get(`${credentials.baseUrl}/projects?page[size]=200`, {
+            // If we have a good similarity match, use it (lowered threshold)
+            if (bestMatch && bestMatchScore >= 20) { // Lowered from 30 to 20
+                this.log(`   ✅ Found best match (score: ${bestMatchScore}): ${bestMatch.attributes.name} (${bestMatch.id})`);
+                return { id: bestMatch.id, name: bestMatch.attributes.name };
+            }
+            // If no match found, try to find any project with partial word match
+            this.log(`   ⚠️ No good match found, looking for any partial match...`);
+            // Search through all pages again for any partial match
+            page = 1;
+            let fallbackProject = null;
+            let fallbackScore = 0;
+            while (page <= 10) {
+                const fallbackResponse = await axios.get(`${credentials.baseUrl}/projects?page[size]=${pageSize}&page[number]=${page}`, {
                     headers: {
                         'Content-Type': 'application/vnd.api+json',
                         'X-Auth-Token': credentials.apiToken,
                         'X-Organization-Id': credentials.organizationId
                     }
                 });
-                const allProjects = allProjectsResponse.data.data;
-                const projectOptions = allProjects.map((project) => ({
-                    label: project.attributes.name,
-                    description: `ID: ${project.id}`,
-                    detail: project
-                }));
-                const selected = await vscode.window.showQuickPick(projectOptions, {
-                    placeHolder: `Select Productive project for Jira project "${searchTerm}"`
-                });
-                if (selected) {
-                    const selectedProject = selected.detail;
-                    this.log(`   ✅ User selected: ${selected.label} (${selectedProject.id})`);
-                    // Save the mapping
-                    projectMapping[searchTerm] = selectedProject.id;
-                    await config.update('productive.projectMapping', projectMapping, vscode.ConfigurationTarget.Global);
-                    this.log(`   💾 Saved mapping: ${searchTerm} -> ${selectedProject.id}`);
-                    return { id: selectedProject.id, name: selected.label };
-                }
-            }
-            else if (action === 'Search all projects') {
-                // Get first available project as fallback
-                const fallbackResponse = await axios.get(`${credentials.baseUrl}/projects?page[size]=1`, {
-                    headers: {
-                        'Content-Type': 'application/vnd.api+json',
-                        'X-Auth-Token': credentials.apiToken,
-                        'X-Organization-Id': credentials.organizationId
+                const fallbackProjects = fallbackResponse.data.data;
+                if (fallbackProjects.length === 0)
+                    break;
+                fallbackProjects.forEach((p) => {
+                    const projectName = p.attributes.name.toLowerCase().trim();
+                    const searchWords = cleanSearchTerm.toLowerCase().split(/\s+/);
+                    // Simple partial word matching for fallback
+                    const partialMatches = searchWords.filter((word) => projectName.includes(word));
+                    const score = partialMatches.length * 10;
+                    if (score > fallbackScore) {
+                        fallbackScore = score;
+                        fallbackProject = p;
                     }
                 });
-                if (fallbackResponse.data.data.length > 0) {
-                    const fallbackProject = fallbackResponse.data.data[0];
-                    this.log(`   ⚠️ Using fallback: ${fallbackProject.attributes.name} (${fallbackProject.id})`);
-                    return { id: fallbackProject.id, name: fallbackProject.attributes.name };
-                }
+                page++;
             }
-            throw new Error('No projects found in Productive');
+            // If we found any fallback project, use it
+            if (fallbackProject && fallbackScore > 0) {
+                this.log(`   ⚠️ Using fallback project (score: ${fallbackScore}): ${fallbackProject.attributes.name} (${fallbackProject.id})`);
+                return { id: fallbackProject.id, name: fallbackProject.attributes.name };
+            }
+            // If still no match found, throw error
+            throw new Error(`No matching project found for "${cleanSearchTerm}" in Productive`);
         }
         catch (error) {
             this.log(`   ❌ Error finding project: ${error.message}`);
             throw error;
+        }
+    }
+    /**
+     * Get previously used service as fallback when no project is found
+     */
+    async getPreviouslyUsedService(credentials, personId) {
+        try {
+            this.log(`   🔍 Looking for previously used service as fallback...`);
+            // Get recent time entries for the user to find the most recently used service
+            const timeEntriesResponse = await require('axios').get(`${credentials.baseUrl}/time_entries?filter[person_id]=${personId}&page[size]=50&sort=-date`, {
+                headers: {
+                    'Content-Type': 'application/vnd.api+json',
+                    'X-Auth-Token': credentials.apiToken,
+                    'X-Organization-Id': credentials.organizationId
+                }
+            });
+            const timeEntries = timeEntriesResponse.data.data;
+            if (timeEntries.length === 0) {
+                this.log(`   ⚠️ No time entries found for user`);
+                return null;
+            }
+            // Find the most recent time entry with a service
+            for (const entry of timeEntries) {
+                if (entry.attributes.service_id) {
+                    const serviceId = entry.attributes.service_id;
+                    // Get service details
+                    const serviceResponse = await require('axios').get(`${credentials.baseUrl}/services/${serviceId}`, {
+                        headers: {
+                            'Content-Type': 'application/vnd.api+json',
+                            'X-Auth-Token': credentials.apiToken,
+                            'X-Organization-Id': credentials.organizationId
+                        }
+                    });
+                    const service = serviceResponse.data.data;
+                    this.log(`   ✅ Found previously used service: ${service.attributes.name} (${service.id})`);
+                    return { serviceId: service.id, serviceName: service.attributes.name };
+                }
+            }
+            this.log(`   ⚠️ No service found in recent time entries`);
+            return null;
+        }
+        catch (error) {
+            this.log(`   ❌ Error getting previously used service: ${error.message}`);
+            return null;
         }
     }
     /**
