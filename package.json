@@ -2,7 +2,7 @@
     "name": "jira-time-tracker",
     "displayName": "JIRA Time Tracker",
     "description": "Track and log time to JIRA tickets",
-    "version": "0.0.1-Beta",
+    "version": "0.0.2-Beta",
     "engines": {
         "vscode": "^1.60.0"
     },

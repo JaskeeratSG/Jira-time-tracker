@@ -648,15 +648,40 @@ class GitService {
         this.outputChannel.appendLine(`🔍 Extracting Jira ticket key from branch: "${branchName}"`);
         // Common patterns for Jira ticket keys in branch names
         const patterns = [
-            /([A-Z]+-\d+)/,
-            /(?:feature|bugfix|hotfix|release)\/([A-Z]+-\d+)/i,
-            /(?:branch|b)\/([A-Z]+-\d+)/i,
-            /(?:feat|fix|chore)\/([A-Z]+-\d+)/i,
-            /(?:task|story|bug)\/([A-Z]+-\d+)/i // task/PROJECT-123
+            {
+                name: "Basic pattern with numbers",
+                regex: /([A-Z0-9]+-\d+)/,
+                example: "CLUB59-234"
+            },
+            {
+                name: "Feature branch pattern",
+                regex: /(?:feature|bugfix|hotfix|release)\/([A-Z0-9]+-\d+)/i,
+                example: "feature/CLUB59-234"
+            },
+            {
+                name: "Branch prefix pattern",
+                regex: /(?:branch|b)\/([A-Z0-9]+-\d+)/i,
+                example: "branch/CLUB59-234"
+            },
+            {
+                name: "Conventional commit pattern",
+                regex: /(?:feat|fix|chore|task|story|bug)\/([A-Z0-9]+-\d+)/i,
+                example: "feat/CLUB59-234"
+            },
+            {
+                name: "Any prefix pattern",
+                regex: /(?:[a-zA-Z0-9_-]+)\/([A-Z0-9]+-\d+)/i,
+                example: "any-prefix/CLUB59-234"
+            },
+            {
+                name: "Standalone pattern",
+                regex: /^([A-Z0-9]+-\d+)$/i,
+                example: "CLUB59-234"
+            }
         ];
         for (let i = 0; i < patterns.length; i++) {
             const pattern = patterns[i];
-            const match = branchName.match(pattern);
+            const match = branchName.match(pattern?.regex);
             if (match) {
                 this.outputChannel.appendLine(`✅ Pattern ${i + 1} matched: "${match[1]}" from branch "${branchName}"`);
                 return match[1]; // Return the captured ticket key
