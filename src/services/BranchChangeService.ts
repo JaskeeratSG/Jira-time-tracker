@@ -66,26 +66,23 @@ export class BranchChangeService {
     }
 
     private async handleBranchChange(event: BranchChangeEvent): Promise<void> {
-        this.outputChannel.appendLine(`🔄 Processing branch change: ${event.oldBranch} → ${event.newBranch}`);
+        this.outputChannel.appendLine(`🔄 Branch changed: ${event.oldBranch} → ${event.newBranch}`);
         try {
-            this.outputChannel.appendLine(`🔍 [DEBUG] Entering findLinkedTicketForBranch for branch: ${event.newBranch}`);
             const ticketInfo = await this.findLinkedTicketForBranch(event.newBranch, event.workspacePath);
-            this.outputChannel.appendLine(`🔍 [DEBUG] findLinkedTicketForBranch result: ${JSON.stringify(ticketInfo)}`);
             if (ticketInfo) {
-                this.outputChannel.appendLine(`✅ Found linked ticket: ${ticketInfo.ticketId} (${ticketInfo.projectKey})`);
+                this.outputChannel.appendLine(`✅ Found ticket: ${ticketInfo.ticketId} (${ticketInfo.projectKey})`);
                 this.autoTimerState.lastBranchInfo = {
                     branch: event.newBranch,
                     ticketId: ticketInfo.ticketId,
                     projectKey: ticketInfo.projectKey
                 };
                 this.saveAutoTimerState();
-                this.outputChannel.appendLine(`📝 [DEBUG] Starting auto-populate for ticket: ${ticketInfo.ticketId}`);
                 await this.autoPopulateTicketInfo(ticketInfo);
                 if (this.autoTimerState.autoStart) {
                     await this.autoStartTimer(ticketInfo);
                 }
             } else {
-                this.outputChannel.appendLine(`❌ No linked ticket found for branch: ${event.newBranch}`);
+                this.outputChannel.appendLine(`❌ No ticket found for branch: ${event.newBranch}`);
             }
         } catch (error) {
             this.outputChannel.appendLine(`❌ Error handling branch change: ${error}`);
@@ -93,9 +90,7 @@ export class BranchChangeService {
     }
 
     private async findLinkedTicketForBranch(branchName: string, repoPath?: string): Promise<BranchTicketInfo | null> {
-        this.outputChannel.appendLine(`🔍 [DEBUG] findLinkedTicketForBranch called with branchName: ${branchName}, repoPath: ${repoPath}`);
         const ticketResult = await this.gitService.findLinkedJiraTicket(branchName, repoPath);
-        this.outputChannel.appendLine(`🔍 [DEBUG] gitService.findLinkedJiraTicket result: ${JSON.stringify(ticketResult)}`);
         if (ticketResult) {
             return {
                 ticketId: ticketResult.ticketId,
