@@ -10,6 +10,10 @@
         "Other"
     ],
     "activationEvents": [
+        "*",
+        "onStartupFinished",
+        "onWorkspaceContains:package.json",
+        "onWorkspaceContains:.git",
         "onCommand:jira-time-logger.startTimer",
         "onCommand:jira-time-logger.stopTimer",
         "onCommand:jira-time-logger.resumeTimer",
