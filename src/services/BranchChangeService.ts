@@ -85,6 +85,21 @@ export class BranchChangeService {
 
         this.outputChannel.appendLine(`🔄 Processing branch change: ${event.oldBranch} → ${event.newBranch}`);
         
+        // Clear processed commits for the new branch to ensure fresh processing
+        this.gitService.clearProcessedCommits(event.workspacePath);
+        this.outputChannel.appendLine(`🧹 Cleared processed commits for new branch: ${event.newBranch}`);
+        
+        // Set current user email for commit filtering
+        try {
+            const currentUser = await this.authService.getCurrentUser();
+            if (currentUser) {
+                this.gitService.setCurrentUserEmail(currentUser.email);
+                this.outputChannel.appendLine(`🔐 Set current user email for commit filtering: ${currentUser.email}`);
+            }
+        } catch (error) {
+            this.outputChannel.appendLine(`⚠️ Could not set current user email: ${error}`);
+        }
+        
         try {
             const ticketInfo = await this.findLinkedTicketForBranch(event.newBranch, event.workspacePath);
             
@@ -184,6 +199,17 @@ export class BranchChangeService {
             if (!isAuthenticated) {
                 this.outputChannel.appendLine('User not authenticated. Skipping initial branch check.');
                 return;
+            }
+
+            // Set current user email for commit filtering
+            try {
+                const currentUser = await this.authService.getCurrentUser();
+                if (currentUser) {
+                    this.gitService.setCurrentUserEmail(currentUser.email);
+                    this.outputChannel.appendLine(`🔐 Set current user email for commit filtering: ${currentUser.email}`);
+                }
+            } catch (error) {
+                this.outputChannel.appendLine(`⚠️ Could not set current user email: ${error}`);
             }
 
             const currentBranchInfo = this.gitService.getCurrentBranchInfo();

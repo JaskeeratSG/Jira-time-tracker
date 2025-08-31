@@ -7,15 +7,31 @@ const path = require("path"); // Added for path.join
 class GitService {
     constructor(jiraService, outputChannel) {
         this.jiraService = jiraService;
-        this.repositories = new Map(); // Using any for vscode.Git since it's not exported
+        this.gitExtension = null;
+        this.repositories = new Map();
         this.callbacks = [];
         this.commitCallbacks = [];
         this.lastKnownBranches = new Map();
         this.lastKnownCommits = new Map();
+        this.processedCommits = new Map(); // Track processed commits per repo
+        this.currentUserEmail = null; // Track current user email for author filtering
         this.fileWatchers = new Map();
         this.headFileWatchers = new Map(); // Added for debug logging
         this.outputChannel = outputChannel;
         this.initializeGitExtension();
+    }
+    /**
+     * Set the current user email for author filtering
+     */
+    setCurrentUserEmail(email) {
+        this.currentUserEmail = email;
+        this.outputChannel.appendLine(`🔐 Current user email set for commit filtering: ${email}`);
+    }
+    /**
+     * Get the current user email
+     */
+    getCurrentUserEmail() {
+        return this.currentUserEmail;
     }
     initializeGitExtension() {
         try {
@@ -198,18 +214,44 @@ class GitService {
                 const lastKnownCommit = this.lastKnownCommits.get(repoPath);
                 if (currentCommit && lastKnownCommit && currentCommit !== lastKnownCommit) {
                     this.outputChannel.appendLine(`🔍 [PERIODIC CHECK] New commit detected: ${currentCommit} (was: ${lastKnownCommit})`);
-                    // Get commit message using the simpler method
-                    const commitMessage = await this.getLastCommitMessage(repoPath);
+                    // Get detailed commit info for debugging
+                    const detailedInfo = await this.getDetailedCommitInfo(repoPath, currentCommit);
+                    if (detailedInfo) {
+                        this.outputChannel.appendLine(`🔍 [PERIODIC CHECK] Commit details - Name: ${detailedInfo.name}, Email: ${detailedInfo.email}, Message: ${detailedInfo.message}`);
+                    }
+                    // Check if this commit has already been processed
+                    if (this.isCommitProcessed(repoPath, currentCommit)) {
+                        this.outputChannel.appendLine(`⏭️ [PERIODIC CHECK] Commit ${currentCommit.substring(0, 8)} already processed, skipping`);
+                        this.lastKnownCommits.set(repoPath, currentCommit);
+                        return;
+                    }
+                    // Get commit details including author
+                    const commitDetails = await this.getCommitDetails(repoPath, currentCommit);
+                    if (!commitDetails) {
+                        this.outputChannel.appendLine(`❌ [PERIODIC CHECK] Could not get commit details for ${currentCommit}`);
+                        return;
+                    }
+                    // Check if commit author is the current user
+                    if (!this.isCommitByCurrentUser(commitDetails.author)) {
+                        this.outputChannel.appendLine(`⏭️ [PERIODIC CHECK] Commit ${currentCommit.substring(0, 8)} by ${commitDetails.author}, not by current user, skipping`);
+                        this.lastKnownCommits.set(repoPath, currentCommit);
+                        return;
+                    }
+                    // Get commit message and current branch
+                    const commitMessage = commitDetails.message;
                     const currentBranch = await this.getCurrentBranchFromFile(repoPath);
                     if (currentBranch) {
                         const commitEvent = {
                             workspacePath: repoPath,
                             branch: currentBranch,
                             commitHash: currentCommit,
-                            commitMessage: commitMessage || `Commit ${currentCommit.substring(0, 8)}`,
+                            commitMessage: commitMessage,
+                            author: commitDetails.author,
                             timestamp: Date.now()
                         };
-                        this.outputChannel.appendLine(`📝 [PERIODIC CHECK] Triggering commit event: ${commitEvent.commitMessage}`);
+                        this.outputChannel.appendLine(`📝 [PERIODIC CHECK] Triggering commit event: ${commitEvent.commitMessage} by ${commitEvent.author}`);
+                        // Mark commit as processed
+                        this.markCommitAsProcessed(repoPath, currentCommit);
                         this.commitCallbacks.forEach(callback => callback(commitEvent));
                     }
                     // Update last known commit
@@ -938,6 +980,101 @@ class GitService {
         }
         catch (error) {
             this.outputChannel.appendLine(`❌ Error getting last commit message: ${error}`);
+            return null;
+        }
+    }
+    /**
+     * Check if a commit has already been processed
+     */
+    isCommitProcessed(repoPath, commitHash) {
+        const processedCommitsForRepo = this.processedCommits.get(repoPath);
+        return processedCommitsForRepo ? processedCommitsForRepo.has(commitHash) : false;
+    }
+    /**
+     * Mark a commit as processed
+     */
+    markCommitAsProcessed(repoPath, commitHash) {
+        if (!this.processedCommits.has(repoPath)) {
+            this.processedCommits.set(repoPath, new Set());
+        }
+        this.processedCommits.get(repoPath).add(commitHash);
+        this.outputChannel.appendLine(`✅ [PERIODIC CHECK] Marked commit ${commitHash.substring(0, 8)} as processed for ${repoPath}`);
+    }
+    /**
+     * Clear processed commits for a repository (useful when switching branches)
+     */
+    clearProcessedCommits(repoPath) {
+        this.processedCommits.delete(repoPath);
+        this.outputChannel.appendLine(`🧹 Cleared processed commits for ${repoPath}`);
+    }
+    /**
+     * Clear all processed commits (useful when switching users or resetting)
+     */
+    clearAllProcessedCommits() {
+        this.processedCommits.clear();
+        this.outputChannel.appendLine(`🧹 Cleared all processed commits`);
+    }
+    /**
+     * Check if commit is by the current user
+     */
+    isCommitByCurrentUser(author) {
+        if (!this.currentUserEmail) {
+            this.outputChannel.appendLine(`⚠️ [PERIODIC CHECK] No current user email set, allowing all commits`);
+            return true; // Allow all commits if no user email is set
+        }
+        const isCurrentUser = author.toLowerCase() === this.currentUserEmail.toLowerCase();
+        this.outputChannel.appendLine(`🔍 [PERIODIC CHECK] Commit author email: ${author}, current user email: ${this.currentUserEmail}, match: ${isCurrentUser}`);
+        return isCurrentUser;
+    }
+    /**
+     * Get commit details including author and message
+     */
+    async getCommitDetails(repoPath, commitHash) {
+        try {
+            const { exec } = require('child_process');
+            const { promisify } = require('util');
+            const execAsync = promisify(exec);
+            // Get commit author email and message (using %ae for author email instead of %an for author name)
+            const { stdout } = await execAsync(`git log -1 --pretty=format:"%ae|%s" ${commitHash}`, {
+                cwd: repoPath
+            });
+            const [author, message] = stdout.trim().split('|');
+            if (author && message) {
+                return { author, message };
+            }
+            else {
+                this.outputChannel.appendLine(`❌ [PERIODIC CHECK] Could not parse commit details: ${stdout}`);
+                return null;
+            }
+        }
+        catch (error) {
+            this.outputChannel.appendLine(`❌ [PERIODIC CHECK] Error getting commit details: ${error}`);
+            return null;
+        }
+    }
+    /**
+     * Get detailed commit info including both name and email for debugging
+     */
+    async getDetailedCommitInfo(repoPath, commitHash) {
+        try {
+            const { exec } = require('child_process');
+            const { promisify } = require('util');
+            const execAsync = promisify(exec);
+            // Get commit author name, email and message
+            const { stdout } = await execAsync(`git log -1 --pretty=format:"%an|%ae|%s" ${commitHash}`, {
+                cwd: repoPath
+            });
+            const [name, email, message] = stdout.trim().split('|');
+            if (name && email && message) {
+                return { name, email, message };
+            }
+            else {
+                this.outputChannel.appendLine(`❌ [DEBUG] Could not parse detailed commit info: ${stdout}`);
+                return null;
+            }
+        }
+        catch (error) {
+            this.outputChannel.appendLine(`❌ [DEBUG] Error getting detailed commit info: ${error}`);
             return null;
         }
     }
