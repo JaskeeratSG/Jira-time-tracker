@@ -1,7 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthenticationService = void 0;
-const vscode = require("vscode");
 class AuthenticationService {
     constructor(context) {
         this.STORAGE_KEY = 'jiraTimeTracker.users';
@@ -219,23 +218,6 @@ class AuthenticationService {
     async isAuthenticated() {
         const activeUser = await this.getActiveUser();
         return activeUser !== null;
-    }
-    /**
-     * Get fallback credentials from VS Code settings (for backward compatibility)
-     */
-    getFallbackCredentials() {
-        const config = vscode.workspace.getConfiguration('jiraTimeTracker');
-        const baseUrl = config.get('baseUrl');
-        const email = config.get('email');
-        const apiToken = config.get('apiToken');
-        if (baseUrl && email && apiToken) {
-            return {
-                baseUrl,
-                email,
-                apiToken
-            };
-        }
-        return null;
     }
 }
 exports.AuthenticationService = AuthenticationService;

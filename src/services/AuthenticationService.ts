@@ -6,6 +6,8 @@ export interface UserCredentials {
     displayName?: string;
     baseUrl: string;
     productiveApiToken?: string;
+    productiveOrganizationId?: string;
+    productiveBaseUrl?: string;
 }
 
 export interface AuthenticatedUser {
@@ -266,25 +268,5 @@ export class AuthenticationService {
     async isAuthenticated(): Promise<boolean> {
         const activeUser = await this.getActiveUser();
         return activeUser !== null;
-    }
-
-    /**
-     * Get fallback credentials from VS Code settings (for backward compatibility)
-     */
-    getFallbackCredentials(): UserCredentials | null {
-        const config = vscode.workspace.getConfiguration('jiraTimeTracker');
-        const baseUrl = config.get<string>('baseUrl');
-        const email = config.get<string>('email');
-        const apiToken = config.get<string>('apiToken');
-
-        if (baseUrl && email && apiToken) {
-            return {
-                baseUrl,
-                email,
-                apiToken
-            };
-        }
-
-        return null;
     }
 } 

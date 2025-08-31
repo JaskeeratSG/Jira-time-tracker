@@ -4,14 +4,20 @@ exports.ProductiveService = void 0;
 const axios_1 = require("axios");
 const vscode = require("vscode");
 class ProductiveService {
-    constructor(outputChannel) {
-        this.outputChannel = outputChannel;
+    constructor(credentials) {
+        this.credentials = credentials;
     }
     /**
      * Set output channel for logging
      */
     setOutputChannel(outputChannel) {
         this.outputChannel = outputChannel;
+    }
+    /**
+     * Set credentials for the service
+     */
+    setCredentials(credentials) {
+        this.credentials = credentials;
     }
     /**
      * Log message to output channel if available
@@ -29,25 +35,13 @@ class ProductiveService {
         console.log(message);
     }
     /**
-     * Get essential Productive credentials from authenticated user or VS Code settings
+     * Get Productive credentials - must be set via setCredentials() or constructor
      */
     getCredentials() {
-        // First try: Get from authenticated user (if available)
-        // Note: This method is called from ProductiveService which doesn't have access to auth service
-        // The JiraTimeLogger handles the authenticated user priority
-        const config = vscode.workspace.getConfiguration('jiraTimeTracker');
-        // Only get essential API credentials from settings/environment
-        const organizationId = config.get('productive.organizationId') || process.env.PRODUCTIVE_ORGANIZATION_ID;
-        const apiToken = config.get('productive.apiToken') || process.env.PRODUCTIVE_API_TOKEN;
-        const baseUrl = config.get('productive.baseUrl') || process.env.PRODUCTIVE_BASE_URL || 'https://api.productive.io/api/v2';
-        if (!organizationId || !apiToken) {
-            throw new Error('Productive credentials not configured. Please set organizationId and apiToken in settings or environment variables.');
+        if (!this.credentials) {
+            throw new Error('Productive credentials not set. Please use setCredentials() or pass credentials to constructor.');
         }
-        return {
-            organizationId,
-            apiToken,
-            baseUrl
-        };
+        return this.credentials;
     }
     /**
      * Make authenticated request to Productive API

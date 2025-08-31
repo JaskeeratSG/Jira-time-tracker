@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { getJiraConfig } from '../config/settings';
 import { AuthenticationService, UserCredentials } from './AuthenticationService';
 import { SearchService, SearchResult } from './SearchService';
 
@@ -28,34 +27,29 @@ export class JiraService {
     }
 
     /**
-     * Get current user credentials (from auth service or fallback to settings)
+     * Check if user is authenticated
+     */
+    public async isAuthenticated(): Promise<boolean> {
+        if (this.authService) {
+            return await this.authService.isAuthenticated();
+        }
+        return false;
+    }
+
+    /**
+     * Get current user credentials (from auth service only)
      */
     public async getCurrentCredentials(): Promise<UserCredentials> {
-        // Try to get from authentication service first
+        // Only get from authentication service - no fallback to hardcoded credentials
         if (this.authService) {
             const credentials = await this.authService.getActiveUserCredentials();
             if (credentials) {
                 return credentials;
             }
+        }
             
-            // Fallback to settings if no authenticated user
-            const fallback = this.authService.getFallbackCredentials();
-            if (fallback) {
-                return fallback;
-            }
-        }
-
-        // Legacy fallback - get from settings
-        const config = getJiraConfig();
-        if (!config.email || !config.apiToken || !config.baseUrl) {
-            throw new Error('No JIRA credentials found. Please sign in or configure settings.');
-        }
-
-        return {
-            email: config.email,
-            apiToken: config.apiToken,
-            baseUrl: config.baseUrl
-        };
+        // No fallback - user must be authenticated
+        throw new Error('No JIRA credentials found. Please sign in to continue.');
     }
 
     async logTime(ticketId: string, timeSpentMinutes: number) {

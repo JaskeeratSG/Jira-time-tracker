@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.deactivate = exports.activate = void 0;
 const vscode = require("vscode");
 const JiraTimeLogger_1 = require("./JiraTimeLogger");
-// import { AuthenticationService } from './services/AuthenticationService';
+const AuthenticationService_1 = require("./services/AuthenticationService");
 const TimeTrackerSidebarProvider_1 = require("./ui/TimeTrackerSidebarProvider");
 const BranchChangeService_1 = require("./services/BranchChangeService");
 // import { GitService, CommitEvent } from './services/GitService';
@@ -283,13 +283,19 @@ let outputChannel;
 function activate(context) {
     try {
         // Create output channel
-        outputChannel = (0, outputChannel_1.createOutputChannel)('Jira Time Tracker');
+        outputChannel = (0, outputChannel_1.createOutputChannel)('Jira Time Tracker - Main');
         outputChannel.appendLine('Jira Time Tracker extension activated');
         // Removed outputChannel.show(true) to prevent extension host issues
+        // Create AuthenticationService first
+        const authService = new AuthenticationService_1.AuthenticationService(context);
         const timeLogger = new JiraTimeLogger_1.JiraTimeLogger();
+        // Update JiraTimeLogger with the authentication service
+        timeLogger.updateJiraService(authService);
         outputChannel.appendLine('JiraTimeLogger instance created');
         // Initialize Branch Change Service
-        const branchChangeService = new BranchChangeService_1.BranchChangeService(timeLogger, context, outputChannel);
+        const branchChangeOutputChannel = (0, outputChannel_1.createOutputChannel)('Jira Time Tracker - Branch Detection');
+        const gitOutputChannel = (0, outputChannel_1.createOutputChannel)('Jira Time Tracker - Git Service');
+        const branchChangeService = new BranchChangeService_1.BranchChangeService(timeLogger, context, branchChangeOutputChannel, gitOutputChannel, authService);
         // Auto-initialize branch detection on extension activation with error handling
         branchChangeService.initialize().then(() => {
             outputChannel.appendLine('✅ Branch detection auto-initialized successfully');
@@ -310,7 +316,7 @@ function activate(context) {
         //     })
         // );
         // Register the sidebar provider
-        const sidebarProvider = new TimeTrackerSidebarProvider_1.TimeTrackerSidebarProvider(context.extensionUri, timeLogger, context);
+        const sidebarProvider = new TimeTrackerSidebarProvider_1.TimeTrackerSidebarProvider(context.extensionUri, timeLogger, context, authService);
         // Connect BranchChangeService to the sidebar provider
         sidebarProvider.setBranchChangeService(branchChangeService);
         context.subscriptions.push(vscode.window.registerWebviewViewProvider(TimeTrackerSidebarProvider_1.TimeTrackerSidebarProvider.viewType, sidebarProvider));
@@ -400,7 +406,6 @@ function activate(context) {
         //             outputChannel.appendLine(`Error testing error logging: ${error}`);
         //             vscode.window.showErrorMessage(`Failed to test error logging: ${error}`);
         //         }
-        //     })
         // );
         // Add command to check Productive credentials being used
         // context.subscriptions.push(

@@ -20,7 +20,7 @@ export class JiraTimeLogger {
     constructor() {
         this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
         this.jiraService = new JiraService();
-        this.outputChannel = vscode.window.createOutputChannel('Jira Time Tracker');
+        this.outputChannel = vscode.window.createOutputChannel('Jira Time Tracker - Logger');
         this.updateStatusBar();
     }
 
@@ -66,6 +66,12 @@ export class JiraTimeLogger {
     }
 
     async startTimer() {
+        // Check authentication first
+        if (!(await this.jiraService.isAuthenticated())) {
+            vscode.window.showErrorMessage('User not authenticated. Please log in first.');
+            return;
+        }
+
         if (this.isRunning) {
             vscode.window.showWarningMessage('Timer is already running');
             return;
@@ -94,7 +100,13 @@ export class JiraTimeLogger {
         this.updateStatusBar();
     }
 
-    resumeTimer() {
+    async resumeTimer() {
+        // Check authentication first
+        if (!(await this.jiraService.isAuthenticated())) {
+            vscode.window.showErrorMessage('User not authenticated. Please log in first.');
+            return;
+        }
+
         if (this.isRunning) {
             vscode.window.showWarningMessage('Timer is already running');
             return;
@@ -104,6 +116,26 @@ export class JiraTimeLogger {
             return;
         }
         this.startTimer();
+    }
+
+    /**
+     * Check authentication and stop timer if user is not authenticated
+     */
+    public async checkAuthenticationAndStopTimerIfNeeded(): Promise<void> {
+        try {
+            if (!(await this.jiraService.isAuthenticated())) {
+                if (this.isRunning) {
+                    this.stopTimer();
+                    vscode.window.showWarningMessage('Timer stopped: User not authenticated');
+                }
+            }
+        } catch (error) {
+            // If there's an error checking authentication, stop the timer for safety
+            if (this.isRunning) {
+                this.stopTimer();
+                vscode.window.showWarningMessage('Timer stopped: Authentication check failed');
+            }
+        }
     }
 
     /**
@@ -117,7 +149,7 @@ export class JiraTimeLogger {
             
             const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
             if (!workspaceFolder) {
-                this.log('❌ No workspace folder found for getting commit message');
+                this.log('No workspace folder found for getting commit message');
                 return null;
             }
             
@@ -126,50 +158,56 @@ export class JiraTimeLogger {
             });
             
             const commitMessage = stdout.trim();
-            this.log(`📝 Last commit message: ${commitMessage}`);
+            this.log(`Last commit message: ${commitMessage}`);
             return commitMessage || null;
         } catch (error) {
-            this.log(`❌ Error getting last commit message: ${error}`);
+            this.log(`Error getting last commit message: ${error}`);
             return null;
         }
     }
 
     async finishAndLog() {
-        this.log(`\n🚀 FINISH AND LOG - STARTING DUAL TIME LOGGING`, true);
+        // Check authentication first
+        if (!(await this.jiraService.isAuthenticated())) {
+            vscode.window.showErrorMessage('User not authenticated. Please log in first.');
+            return;
+        }
+
+        this.log(`\nFINISH AND LOG - STARTING DUAL TIME LOGGING`, true);
         this.log(`═══════════════════════════════════════════════════════════`);
         
         this.stopTimer();
         const timeSpent = Math.round(this.elapsedTime / 1000 / 60); // Convert to minutes
         const ticketId = this.currentIssue || await this.getTicketFromBranch();
         
-        this.log(`📊 Timer stopped. Time spent: ${timeSpent} minutes`);
-        this.log(`🎯 Ticket ID: ${ticketId}`);
+        this.log(`Timer stopped. Time spent: ${timeSpent} minutes`);
+        this.log(`Ticket ID: ${ticketId}`);
         
         if (ticketId) {
             try {
-                this.log(`\n📊 Starting dual time logging (Jira + Productive)...`);
+                this.log(`\nStarting dual time logging (Jira + Productive)...`);
                 
                 // Get the last commit message for description
                 const commitMessage = await this.getLastCommitMessage();
                 const description = commitMessage || `Time logged via VS Code extension`;
-                this.log(`📝 Using description: ${description}`);
+                this.log(`Using description: ${description}`);
                 
                 // Use the enhanced logTime method that includes Productive integration
                 await this.logTime(ticketId, timeSpent, description);
                 
                 // Show time logged notification
-                vscode.window.showInformationMessage(`✅ Time logged: ${timeSpent} minutes to ${ticketId}`);
+                vscode.window.showInformationMessage(`Time logged: ${timeSpent} minutes to ${ticketId}`);
                 
                 this.resetTimer();
                 this.currentIssue = null;
-                this.log(`✅ Dual time logging completed successfully`);
+                this.log(`Dual time logging completed successfully`);
             } catch (error:any) {
-                this.log(`❌ Dual time logging failed: ${error.message}`);
-                vscode.window.showErrorMessage(`❌ Failed to log time: ${error.message}`);
+                this.log(`Dual time logging failed: ${error.message}`);
+                vscode.window.showErrorMessage(`Failed to log time: ${error.message}`);
             }
         } else {
-            this.log(`❌ No ticket ID found for time logging`);
-            vscode.window.showErrorMessage('❌ No JIRA ticket selected for time logging');
+            this.log(`No ticket ID found for time logging`);
+            vscode.window.showErrorMessage('No JIRA ticket selected for time logging');
         }
     }
 
@@ -189,6 +227,11 @@ export class JiraTimeLogger {
         const seconds = Math.floor((this.elapsedTime / 1000) % 60);
         this.statusBarItem.text = `$(clock) ${minutes}:${seconds.toString().padStart(2, '0')}`;
         this.statusBarItem.show();
+        
+        // Check authentication every 30 seconds (when seconds is 0 or 30)
+        if (this.isRunning && (seconds === 0 || seconds === 30)) {
+            this.checkAuthenticationAndStopTimerIfNeeded();
+        }
     }
 
     private async getTicketId(): Promise<string | null> {
@@ -343,6 +386,11 @@ export class JiraTimeLogger {
 
     public async logTime(ticket: string, timeSpent: string | number, description?: string): Promise<void> {
         try {
+            // Check authentication first
+            if (!(await this.jiraService.isAuthenticated())) {
+                throw new Error('User not authenticated. Please log in first.');
+            }
+
             let minutes: number;
             
             if (typeof timeSpent === 'number') {
@@ -357,30 +405,30 @@ export class JiraTimeLogger {
                 throw new Error('Invalid time format. Please provide a positive number of minutes.');
             }
 
-            this.log(`🚀 DUAL TIME LOGGING WORKFLOW`, true);
-            this.log(`🎯 Jira Ticket: ${ticket}`);
-            this.log(`⏰ Time: ${minutes} minutes`);
+            this.log(`DUAL TIME LOGGING WORKFLOW`, true);
+            this.log(`Jira Ticket: ${ticket}`);
+            this.log(`Time: ${minutes} minutes`);
             this.log('='.repeat(50));
 
             // Step 1: Verify Jira ticket exists (following proven pattern)
-            this.log('\n📊 Step 1: Verifying Jira ticket...');
+            this.log('\nStep 1: Verifying Jira ticket...');
             const ticketInfo = await this.verifyJiraTicket(ticket);
             if (!ticketInfo.exists) {
                 throw new Error(`Jira ticket ${ticket} not found or inaccessible`);
             }
-            this.log(`✅ Jira ticket verified: ${ticket}`);
+            this.log(`Jira ticket verified: ${ticket}`);
             
             // Store project information for Productive lookup
             const jiraProjectName = ticketInfo.projectName;
             const jiraProjectKey = ticketInfo.projectKey;
 
             // Step 2: Log time to JIRA (primary service - following proven pattern)
-            this.log('\n📊 Step 2: Logging time to Jira...');
+            this.log('\nStep 2: Logging time to Jira...');
             await this.logTimeToJira(ticket, minutes, description);
-            this.log(`✅ Jira time logged: ${minutes} minutes to ${ticket}`);
+            this.log(`Jira time logged: ${minutes} minutes to ${ticket}`);
 
             // Step 3: Log time to Productive (secondary service - only if Jira succeeded)
-            this.log('\n📊 Step 3: Logging time to Productive...');
+            this.log('\nStep 3: Logging time to Productive...');
             this.showProductiveOutput();
             let productiveSuccess = false;
             let productiveError = '';
@@ -388,25 +436,25 @@ export class JiraTimeLogger {
             try {
                 await this.logTimeToProductive(ticket, minutes, description, jiraProjectName);
                 productiveSuccess = true;
-                this.log(`✅ Productive time logged: ${minutes} minutes`);
+                this.log(`Productive time logged: ${minutes} minutes`);
                 // Output channel disabled for time logging
                 // this.outputChannel.show(true);
             } catch (error: any) {
                 productiveError = error.message;
-                this.log(`❌ Productive logging failed: ${error.message}`);
+                this.log(`Productive logging failed: ${error.message}`);
                 // Output channel disabled for time logging
                 // this.outputChannel.show(true);
             }
 
             // Step 4: Final result message
             if (productiveSuccess) {
-                this.log(`\n🎯 SUCCESS: Time logged successfully to both Jira and Productive: ${minutes} minutes`);
+                this.log(`\nSUCCESS: Time logged successfully to both Jira and Productive: ${minutes} minutes`);
             } else {
-                this.log(`\n⚠️ PARTIAL SUCCESS: Time logged to Jira successfully. Productive failed: ${productiveError}`);
+                this.log(`\nPARTIAL SUCCESS: Time logged to Jira successfully. Productive failed: ${productiveError}`);
             }
 
         } catch (error: any) {
-            this.log(`❌ FAILED: Time logging failed: ${error.message}`);
+            this.log(`FAILED: Time logging failed: ${error.message}`);
             throw new Error(`Failed to log time: ${error.message}`);
         }
     }
@@ -506,7 +554,7 @@ export class JiraTimeLogger {
             let projectInfo: { id: string; name: string };
             try {
                 projectInfo = await this.findProductiveProjectForCurrentWork(credentials, jiraProjectName);
-                this.log(`   ✅ Project: ${projectInfo.name} (${projectInfo.id})`);
+            this.log(`   ✅ Project: ${projectInfo.name} (${projectInfo.id})`);
             } catch (projectError: any) {
                 this.log(`   ⚠️ Project not found: ${projectError.message}`);
                 this.log(`   🔄 Using fallback: logging time to previously used service...`);
@@ -595,7 +643,7 @@ export class JiraTimeLogger {
             
             // Show output on error so user can see what went wrong (only if logging is enabled)
             if (this.isLoggingEnabled()) {
-                this.outputChannel.show(true);
+            this.outputChannel.show(true);
             }
             throw new Error(`Productive integration failed: ${error.message}`);
         }
@@ -703,13 +751,13 @@ export class JiraTimeLogger {
                 this.log(`   📊 Searching page ${page}...`);
                 
                 const searchResponse = await axios.get(`${credentials.baseUrl}/projects?page[size]=${pageSize}&page[number]=${page}`, {
-                headers: {
-                    'Content-Type': 'application/vnd.api+json',
-                    'X-Auth-Token': credentials.apiToken,
-                    'X-Organization-Id': credentials.organizationId
-                }
-            });
-            
+                        headers: {
+                            'Content-Type': 'application/vnd.api+json',
+                            'X-Auth-Token': credentials.apiToken,
+                            'X-Organization-Id': credentials.organizationId
+                        }
+                    });
+                    
                 const projects = searchResponse.data.data;
                 if (projects.length === 0) {
                     this.log(`   📊 No more projects found on page ${page}`);
@@ -984,20 +1032,31 @@ export class JiraTimeLogger {
             this.log('   🔍 Checking AuthenticationService for current user...');
             const jiraService = this.jiraService as any;
             if (jiraService.authService) {
-                const authService = jiraService.authService;
-                const currentUser = await authService.getCurrentUser();
+            const authService = jiraService.authService;
+            const currentUser = await authService.getCurrentUser();
                 if (currentUser) {
-                    this.log(`   📋 Current User: ${currentUser.email}`);
-                    const userCreds = await authService.getUserCredentials(currentUser.email);
+            this.log(`   📋 Current User: ${currentUser.email}`);
+            const userCreds = await authService.getUserCredentials(currentUser.email);
                     if (userCreds?.productiveApiToken) {
                         this.log('   ✅ Using Productive credentials from authenticated user');
                         this.log(`   📋 User: ${currentUser.email}`);
                         this.log(`   📋 Productive API Token: ${userCreds.productiveApiToken ? 'Found' : 'Missing'}`);
-                        return {
-                            apiToken: userCreds.productiveApiToken,
-                            organizationId: process.env.PRODUCTIVE_ORGANIZATION_ID || '42335',
-                            baseUrl: process.env.PRODUCTIVE_BASE_URL || 'https://api.productive.io/api/v2'
-                        };
+                        
+                        // Get Jira credentials from authenticated user
+                        const jiraBaseUrl = userCreds.baseUrl;
+                        const jiraEmail = userCreds.email;
+                        const jiraApiToken = userCreds.apiToken;
+                        
+                        this.log(`   📋 Jira Base URL: ${jiraBaseUrl}`);
+                        this.log(`   📋 Jira Email: ${jiraEmail}`);
+                        this.log(`   📋 Jira API Token: ${jiraApiToken ? 'Found' : 'Missing'}`);
+                        
+                        // Keep organizationId and baseUrl from .env as intended
+            return {
+                apiToken: userCreds.productiveApiToken,
+                organizationId: process.env.PRODUCTIVE_ORGANIZATION_ID || '42335',
+                baseUrl: process.env.PRODUCTIVE_BASE_URL || 'https://api.productive.io/api/v2'
+            };
                     } else {
                         this.log('⚠️ No Productive API token found in user credentials');
                         this.log(`   📋 Available credentials: ${JSON.stringify(Object.keys(userCreds || {}), null, 2)}`);
@@ -1113,11 +1172,11 @@ export class JiraTimeLogger {
             const recentServicesResponse = await axios.get(
                 `${credentials.baseUrl}/time_entries?filter[person_id]=${personId}&page[size]=10&include=service`,
                 {
-                    headers: {
-                        'Content-Type': 'application/vnd.api+json',
-                        'X-Auth-Token': credentials.apiToken,
-                        'X-Organization-Id': credentials.organizationId
-                    }
+                headers: {
+                    'Content-Type': 'application/vnd.api+json',
+                    'X-Auth-Token': credentials.apiToken,
+                    'X-Organization-Id': credentials.organizationId
+                }
                 }
             );
             
@@ -1707,7 +1766,7 @@ export class JiraTimeLogger {
             
             // Show output on error (only if logging is enabled)
             if (this.isLoggingEnabled()) {
-                this.outputChannel.show(true);
+            this.outputChannel.show(true);
             }
         }
     }
@@ -1748,7 +1807,7 @@ export class JiraTimeLogger {
         
         // Show output channel (only if logging is enabled)
         if (this.isLoggingEnabled()) {
-            this.outputChannel.show(true);
+        this.outputChannel.show(true);
         }
     }
 } 

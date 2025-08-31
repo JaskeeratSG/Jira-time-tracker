@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { GitService, BranchChangeEvent, GitRepositoryInfo, CommitEvent } from './GitService';
 import { JiraTimeLogger } from '../JiraTimeLogger';
 import { JiraService } from './JiraService';
+import { AuthenticationService } from './AuthenticationService';
 
 export interface BranchTicketInfo {
     ticketId: string;
@@ -24,18 +25,20 @@ export class BranchChangeService {
     private gitService: GitService;
     private jiraService: JiraService;
     private timeLogger: JiraTimeLogger;
+    private authService: AuthenticationService;
     private context: vscode.ExtensionContext;
     private outputChannel: vscode.OutputChannel;
     private autoTimerState: AutoTimerState;
     private isInitialized = false;
     public onTicketAutoPopulated?: (ticketInfo: BranchTicketInfo) => void;
 
-    constructor(timeLogger: JiraTimeLogger, context: vscode.ExtensionContext, outputChannel: vscode.OutputChannel) {
+    constructor(timeLogger: JiraTimeLogger, context: vscode.ExtensionContext, outputChannel: vscode.OutputChannel, gitOutputChannel: vscode.OutputChannel, authService: AuthenticationService) {
         this.timeLogger = timeLogger;
         this.context = context;
         this.outputChannel = outputChannel;
-        this.jiraService = new JiraService();
-        this.gitService = new GitService(this.jiraService, outputChannel);
+        this.authService = authService;
+        this.jiraService = new JiraService(this.authService);
+        this.gitService = new GitService(this.jiraService, gitOutputChannel);
         this.autoTimerState = this.loadAutoTimerState();
     }
 
@@ -43,6 +46,13 @@ export class BranchChangeService {
         if (this.isInitialized) return;
 
         this.outputChannel.appendLine('🚀 Initializing Branch Change Service...');
+
+        // Check authentication first
+        const isAuthenticated = await this.authService.isAuthenticated();
+        if (!isAuthenticated) {
+            this.outputChannel.appendLine('User not authenticated. Branch change monitoring disabled.');
+            return;
+        }
 
         // Set up branch change monitoring
         this.setupBranchChangeMonitoring();
@@ -66,11 +76,18 @@ export class BranchChangeService {
     }
 
     private async handleBranchChange(event: BranchChangeEvent): Promise<void> {
+        // Check authentication before processing
+        const isAuthenticated = await this.authService.isAuthenticated();
+        if (!isAuthenticated) {
+            this.outputChannel.appendLine('User not authenticated. Skipping branch change processing.');
+            return;
+        }
+
         this.outputChannel.appendLine(`🔄 Processing branch change: ${event.oldBranch} → ${event.newBranch}`);
+        
         try {
-            this.outputChannel.appendLine(`🔍 [DEBUG] Entering findLinkedTicketForBranch for branch: ${event.newBranch}`);
             const ticketInfo = await this.findLinkedTicketForBranch(event.newBranch, event.workspacePath);
-            this.outputChannel.appendLine(`🔍 [DEBUG] findLinkedTicketForBranch result: ${JSON.stringify(ticketInfo)}`);
+            
             if (ticketInfo) {
                 this.outputChannel.appendLine(`✅ Found linked ticket: ${ticketInfo.ticketId} (${ticketInfo.projectKey})`);
                 this.autoTimerState.lastBranchInfo = {
@@ -79,8 +96,9 @@ export class BranchChangeService {
                     projectKey: ticketInfo.projectKey
                 };
                 this.saveAutoTimerState();
-                this.outputChannel.appendLine(`📝 [DEBUG] Starting auto-populate for ticket: ${ticketInfo.ticketId}`);
+                
                 await this.autoPopulateTicketInfo(ticketInfo);
+                
                 if (this.autoTimerState.autoStart) {
                     await this.autoStartTimer(ticketInfo);
                 }
@@ -93,9 +111,8 @@ export class BranchChangeService {
     }
 
     private async findLinkedTicketForBranch(branchName: string, repoPath?: string): Promise<BranchTicketInfo | null> {
-        this.outputChannel.appendLine(`🔍 [DEBUG] findLinkedTicketForBranch called with branchName: ${branchName}, repoPath: ${repoPath}`);
         const ticketResult = await this.gitService.findLinkedJiraTicket(branchName, repoPath);
-        this.outputChannel.appendLine(`🔍 [DEBUG] gitService.findLinkedJiraTicket result: ${JSON.stringify(ticketResult)}`);
+        
         if (ticketResult) {
             return {
                 ticketId: ticketResult.ticketId,
@@ -107,10 +124,15 @@ export class BranchChangeService {
         return null;
     }
 
-
-
     private async autoPopulateTicketInfo(ticketInfo: BranchTicketInfo): Promise<void> {
         try {
+            // Check authentication before populating
+            const isAuthenticated = await this.authService.isAuthenticated();
+            if (!isAuthenticated) {
+                this.outputChannel.appendLine('User not authenticated. Skipping ticket population.');
+                return;
+            }
+
             this.outputChannel.appendLine(`📝 Auto-populating UI with ticket: ${ticketInfo.ticketId}`);
             
             // Set current project and issue in the time logger
@@ -130,8 +152,15 @@ export class BranchChangeService {
 
     private async autoStartTimer(ticketInfo: BranchTicketInfo): Promise<void> {
         try {
+            // Check authentication before starting timer
+            const isAuthenticated = await this.authService.isAuthenticated();
+            if (!isAuthenticated) {
+                this.outputChannel.appendLine('User not authenticated. Skipping auto-start timer.');
+                return;
+            }
+
             if (this.timeLogger.isTimerRunning()) {
-                this.outputChannel.appendLine('⏰ Timer already running, skipping auto-start');
+                this.outputChannel.appendLine('Timer already running, skipping auto-start');
                 return;
             }
 
@@ -150,6 +179,13 @@ export class BranchChangeService {
 
     private async performInitialBranchCheck(): Promise<void> {
         try {
+            // Check authentication before initial check
+            const isAuthenticated = await this.authService.isAuthenticated();
+            if (!isAuthenticated) {
+                this.outputChannel.appendLine('User not authenticated. Skipping initial branch check.');
+                return;
+            }
+
             const currentBranchInfo = this.gitService.getCurrentBranchInfo();
             if (currentBranchInfo) {
                 this.outputChannel.appendLine(`🌿 Initial branch check: ${currentBranchInfo.branch}`);
@@ -166,34 +202,41 @@ export class BranchChangeService {
     }
 
     public async handleCommit(event: CommitEvent): Promise<void> {
+        // Check authentication before processing commit
+        const isAuthenticated = await this.authService.isAuthenticated();
+        if (!isAuthenticated) {
+            this.outputChannel.appendLine('User not authenticated. Skipping commit processing.');
+            return;
+        }
+
         if (!this.autoTimerState.autoLog) {
-            this.outputChannel.appendLine('📝 Auto-logging disabled, skipping commit log');
+            this.outputChannel.appendLine('Auto-logging disabled, skipping commit log');
             return;
         }
 
         if (!this.timeLogger.isTimerRunning()) {
-            this.outputChannel.appendLine('⏰ Timer not running, skipping commit log');
+            this.outputChannel.appendLine('Timer not running, skipping commit log');
             return;
         }
 
         try {
-            this.outputChannel.appendLine(`📝 Processing commit from repository: ${event.workspacePath}`);
-            this.outputChannel.appendLine(`📝 Commit message: ${event.commitMessage}`);
-            this.outputChannel.appendLine(`📝 Branch: ${event.branch}`);
+            this.outputChannel.appendLine(`Processing commit from repository: ${event.workspacePath}`);
+            this.outputChannel.appendLine(`Commit message: ${event.commitMessage}`);
+            this.outputChannel.appendLine(`Branch: ${event.branch}`);
 
             // Use the branch from the commit event instead of getting current branch info
             const ticketInfo = await this.findLinkedTicketForBranch(event.branch, event.workspacePath);
             if (!ticketInfo) {
-                this.outputChannel.appendLine('❌ No linked ticket found for commit branch');
+                this.outputChannel.appendLine('No linked ticket found for commit branch');
                 return;
             }
 
-            this.outputChannel.appendLine(`📝 Logging time for commit: ${event.commitMessage}`);
-            this.outputChannel.appendLine(`📝 Ticket: ${ticketInfo.ticketId} (${ticketInfo.projectKey})`);
+            this.outputChannel.appendLine(`Logging time for commit: ${event.commitMessage}`);
+            this.outputChannel.appendLine(`Ticket: ${ticketInfo.ticketId} (${ticketInfo.projectKey})`);
             
             // Get the elapsed time in minutes for logging
             const elapsedMinutes = this.timeLogger.getElapsedMinutes();
-            this.outputChannel.appendLine(`📝 Elapsed time: ${elapsedMinutes} minutes`);
+            this.outputChannel.appendLine(`Elapsed time: ${elapsedMinutes} minutes`);
             
             // Log time using the commit message as description
             await this.timeLogger.logTime(
@@ -201,17 +244,17 @@ export class BranchChangeService {
                 elapsedMinutes,
                 event.commitMessage
             );
-            this.outputChannel.appendLine('✅ Time logged successfully for commit');
+            this.outputChannel.appendLine('Time logged successfully for commit');
             
             // Show commit time logged notification
-            vscode.window.showInformationMessage(`✅ Time logged for commit: ${elapsedMinutes} minutes to ${ticketInfo.ticketId}`);
+            vscode.window.showInformationMessage(`Time logged for commit: ${elapsedMinutes} minutes to ${ticketInfo.ticketId}`);
             
             // Reset the timer after successful logging
             this.timeLogger.stopTimer();
             this.timeLogger.resetTimer();
-            this.outputChannel.appendLine('🔄 Timer reset after successful commit logging');
+            this.outputChannel.appendLine('Timer reset after successful commit logging');
         } catch (error) {
-            this.outputChannel.appendLine(`❌ Error logging time for commit: ${error}`);
+            this.outputChannel.appendLine(`Error logging time for commit: ${error}`);
         }
     }
 
@@ -231,11 +274,32 @@ export class BranchChangeService {
     public updateAutoTimerSettings(settings: Partial<AutoTimerState>): void {
         this.autoTimerState = { ...this.autoTimerState, ...settings };
         this.saveAutoTimerState();
-        this.outputChannel.appendLine(`⚙️ Auto-timer settings updated: ${JSON.stringify(settings)}`);
+        this.outputChannel.appendLine(`Auto-timer settings updated: ${JSON.stringify(settings)}`);
     }
 
     public getAutoTimerSettings(): AutoTimerState {
         return { ...this.autoTimerState };
+    }
+
+    /**
+     * Check authentication status and update service state
+     */
+    public async checkAuthenticationStatus(): Promise<void> {
+        const isAuthenticated = await this.authService.isAuthenticated();
+        
+        if (!isAuthenticated && this.isInitialized) {
+            this.outputChannel.appendLine('User not authenticated. Disabling branch change monitoring.');
+            this.isInitialized = false;
+            
+            // Stop any running timers
+            if (this.timeLogger.isTimerRunning()) {
+                this.timeLogger.stopTimer();
+                this.outputChannel.appendLine('Timer stopped due to authentication loss');
+            }
+        } else if (isAuthenticated && !this.isInitialized) {
+            this.outputChannel.appendLine('User authenticated. Re-enabling branch change monitoring.');
+            await this.initialize();
+        }
     }
 
     private loadAutoTimerState(): AutoTimerState {
@@ -251,13 +315,13 @@ export class BranchChangeService {
     }
 
     public dispose(): void {
-        this.outputChannel.appendLine('🧹 Cleaning up Branch Change Service...');
+        this.outputChannel.appendLine('Cleaning up Branch Change Service...');
         
         if (this.gitService) {
             this.gitService.dispose();
         }
         
         this.isInitialized = false;
-        this.outputChannel.appendLine('✅ Branch Change Service cleaned up');
+        this.outputChannel.appendLine('Branch Change Service cleaned up');
     }
 } 

@@ -3,16 +3,15 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.TimeTrackerSidebarProvider = void 0;
 const vscode = require("vscode");
 const axios_1 = require("axios");
-const AuthenticationService_1 = require("../services/AuthenticationService");
 const UIComponents_1 = require("./components/UIComponents");
 const outputChannel_1 = require("../utils/outputChannel");
 class TimeTrackerSidebarProvider {
-    constructor(_extensionUri, timeLogger, _context) {
+    constructor(_extensionUri, timeLogger, _context, authService) {
         this._extensionUri = _extensionUri;
         this._context = _context;
         this._timeLogger = timeLogger;
-        this._authService = new AuthenticationService_1.AuthenticationService(_context);
-        this._outputChannel = (0, outputChannel_1.createOutputChannel)('Jira Time Tracker');
+        this._authService = authService;
+        this._outputChannel = (0, outputChannel_1.createOutputChannel)('Jira Time Tracker - UI');
         // Removed initialization message
     }
     setBranchChangeService(branchChangeService) {
@@ -21,14 +20,29 @@ class TimeTrackerSidebarProvider {
     }
     _setupBranchChangeMonitoring() {
         if (!this._branchChangeService) {
-            this._outputChannel.appendLine('⚠️ BranchChangeService not available for monitoring');
+            this._outputChannel.appendLine('BranchChangeService not available for monitoring');
             return;
         }
         this._branchChangeService.onTicketAutoPopulated = async (ticketInfo) => {
-            this._outputChannel.appendLine(`🎯 Auto-populated ticket received: ${ticketInfo.ticketId}`);
+            this._outputChannel.appendLine(`Auto-populated ticket received: ${ticketInfo.ticketId}`);
             await this._updateUIWithTicketInfo(ticketInfo);
         };
-        this._outputChannel.appendLine('✅ Branch change monitoring set up');
+        this._outputChannel.appendLine('Branch change monitoring set up');
+        // Set up periodic authentication check
+        this._setupAuthenticationMonitoring();
+    }
+    _setupAuthenticationMonitoring() {
+        // Check authentication status every 30 seconds
+        setInterval(async () => {
+            try {
+                if (this._branchChangeService) {
+                    await this._branchChangeService.checkAuthenticationStatus();
+                }
+            }
+            catch (error) {
+                this._outputChannel.appendLine(`Authentication monitoring error: ${error}`);
+            }
+        }, 30000); // 30 seconds
     }
     async _updateUIWithTicketInfo(ticketInfo) {
         this._outputChannel.appendLine(`🎯 Auto-populated ticket received: ${ticketInfo.ticketId}`);
@@ -295,6 +309,11 @@ class TimeTrackerSidebarProvider {
                             break;
                         case 'signOut':
                             try {
+                                // Stop any running timer before signing out
+                                if (this._timeLogger.isTimerRunning()) {
+                                    this._timeLogger.stopTimer();
+                                    this._outputChannel.appendLine('Timer stopped due to sign out');
+                                }
                                 // Sign out current user
                                 await this._authService.signOut();
                                 this._outputChannel.appendLine('User signed out');

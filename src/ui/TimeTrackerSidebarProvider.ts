@@ -29,11 +29,12 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
     constructor(
         private readonly _extensionUri: vscode.Uri, 
         timeLogger: JiraTimeLogger,
-        private readonly _context: vscode.ExtensionContext
+        private readonly _context: vscode.ExtensionContext,
+        authService: AuthenticationService
     ) {
         this._timeLogger = timeLogger;
-        this._authService = new AuthenticationService(_context);
-        this._outputChannel = createOutputChannel('Jira Time Tracker');
+        this._authService = authService;
+        this._outputChannel = createOutputChannel('Jira Time Tracker - UI');
         // Removed initialization message
     }
 
@@ -44,16 +45,32 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
 
     private _setupBranchChangeMonitoring(): void {
         if (!this._branchChangeService) {
-            this._outputChannel.appendLine('⚠️ BranchChangeService not available for monitoring');
+            this._outputChannel.appendLine('BranchChangeService not available for monitoring');
             return;
         }
 
         this._branchChangeService.onTicketAutoPopulated = async (ticketInfo: BranchTicketInfo) => {
-            this._outputChannel.appendLine(`🎯 Auto-populated ticket received: ${ticketInfo.ticketId}`);
+            this._outputChannel.appendLine(`Auto-populated ticket received: ${ticketInfo.ticketId}`);
             await this._updateUIWithTicketInfo(ticketInfo);
         };
 
-        this._outputChannel.appendLine('✅ Branch change monitoring set up');
+        this._outputChannel.appendLine('Branch change monitoring set up');
+        
+        // Set up periodic authentication check
+        this._setupAuthenticationMonitoring();
+    }
+
+    private _setupAuthenticationMonitoring(): void {
+        // Check authentication status every 30 seconds
+        setInterval(async () => {
+            try {
+                if (this._branchChangeService) {
+                    await this._branchChangeService.checkAuthenticationStatus();
+                }
+            } catch (error) {
+                this._outputChannel.appendLine(`Authentication monitoring error: ${error}`);
+            }
+        }, 30000); // 30 seconds
     }
 
     private async _updateUIWithTicketInfo(ticketInfo: BranchTicketInfo): Promise<void> {
@@ -354,6 +371,12 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
                             break;
                         case 'signOut':
                             try {
+                                // Stop any running timer before signing out
+                                if (this._timeLogger.isTimerRunning()) {
+                                    this._timeLogger.stopTimer();
+                                    this._outputChannel.appendLine('Timer stopped due to sign out');
+                                }
+                                
                                 // Sign out current user
                                 await this._authService.signOut();
                                 this._outputChannel.appendLine('User signed out');

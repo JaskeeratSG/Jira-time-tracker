@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { JiraTimeLogger } from './JiraTimeLogger';
-// import { AuthenticationService } from './services/AuthenticationService';
+import { AuthenticationService } from './services/AuthenticationService';
 import { TimeTrackerSidebarProvider } from './ui/TimeTrackerSidebarProvider';
 import { BranchChangeService } from './services/BranchChangeService';
 // import { GitService, CommitEvent } from './services/GitService';
@@ -355,15 +355,22 @@ let outputChannel: vscode.OutputChannel;
 export function activate(context: vscode.ExtensionContext) {
     try {
         // Create output channel
-        outputChannel = createOutputChannel('Jira Time Tracker');
+        outputChannel = createOutputChannel('Jira Time Tracker - Main');
         outputChannel.appendLine('Jira Time Tracker extension activated');
         // Removed outputChannel.show(true) to prevent extension host issues
         
+        // Create AuthenticationService first
+        const authService = new AuthenticationService(context);
+        
         const timeLogger = new JiraTimeLogger();
+        // Update JiraTimeLogger with the authentication service
+        timeLogger.updateJiraService(authService);
         outputChannel.appendLine('JiraTimeLogger instance created');
 
         // Initialize Branch Change Service
-        const branchChangeService = new BranchChangeService(timeLogger, context, outputChannel);
+        const branchChangeOutputChannel = createOutputChannel('Jira Time Tracker - Branch Detection');
+        const gitOutputChannel = createOutputChannel('Jira Time Tracker - Git Service');
+        const branchChangeService = new BranchChangeService(timeLogger, context, branchChangeOutputChannel, gitOutputChannel, authService);
         
         // Auto-initialize branch detection on extension activation with error handling
         branchChangeService.initialize().then(() => {
@@ -390,7 +397,8 @@ export function activate(context: vscode.ExtensionContext) {
         const sidebarProvider = new TimeTrackerSidebarProvider(
             context.extensionUri,
             timeLogger,
-            context
+            context,
+            authService
         );
         
         // Connect BranchChangeService to the sidebar provider
@@ -495,7 +503,6 @@ export function activate(context: vscode.ExtensionContext) {
         //             outputChannel.appendLine(`Error testing error logging: ${error}`);
         //             vscode.window.showErrorMessage(`Failed to test error logging: ${error}`);
         //         }
-        //     })
         // );
 
         // Add command to check Productive credentials being used

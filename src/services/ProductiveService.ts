@@ -52,9 +52,10 @@ export interface ProductiveTimeEntry {
 
 export class ProductiveService {
     private outputChannel?: vscode.OutputChannel;
+    private credentials?: ProductiveCredentials;
     
-    constructor(outputChannel?: vscode.OutputChannel) {
-        this.outputChannel = outputChannel;
+    constructor(credentials?: ProductiveCredentials) {
+        this.credentials = credentials;
     }
 
     /**
@@ -62,6 +63,13 @@ export class ProductiveService {
      */
     public setOutputChannel(outputChannel: vscode.OutputChannel): void {
         this.outputChannel = outputChannel;
+    }
+
+    /**
+     * Set credentials for the service
+     */
+    public setCredentials(credentials: ProductiveCredentials): void {
+        this.credentials = credentials;
     }
 
     /**
@@ -83,29 +91,13 @@ export class ProductiveService {
     }
 
     /**
-     * Get essential Productive credentials from authenticated user or VS Code settings
+     * Get Productive credentials - must be set via setCredentials() or constructor
      */
     private getCredentials(): ProductiveCredentials {
-        // First try: Get from authenticated user (if available)
-        // Note: This method is called from ProductiveService which doesn't have access to auth service
-        // The JiraTimeLogger handles the authenticated user priority
-        
-        const config = vscode.workspace.getConfiguration('jiraTimeTracker');
-        
-        // Only get essential API credentials from settings/environment
-        const organizationId = config.get<string>('productive.organizationId') || process.env.PRODUCTIVE_ORGANIZATION_ID;
-        const apiToken = config.get<string>('productive.apiToken') || process.env.PRODUCTIVE_API_TOKEN;
-        const baseUrl = config.get<string>('productive.baseUrl') || process.env.PRODUCTIVE_BASE_URL || 'https://api.productive.io/api/v2';
-
-        if (!organizationId || !apiToken) {
-            throw new Error('Productive credentials not configured. Please set organizationId and apiToken in settings or environment variables.');
+        if (!this.credentials) {
+            throw new Error('Productive credentials not set. Please use setCredentials() or pass credentials to constructor.');
         }
-
-        return {
-            organizationId,
-            apiToken,
-            baseUrl
-        };
+        return this.credentials;
     }
 
     /**

@@ -2,7 +2,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.JiraService = void 0;
 const axios_1 = require("axios");
-const settings_1 = require("../config/settings");
 const SearchService_1 = require("./SearchService");
 class JiraService {
     constructor(authService) {
@@ -10,31 +9,27 @@ class JiraService {
         this.authService = authService || null;
     }
     /**
-     * Get current user credentials (from auth service or fallback to settings)
+     * Check if user is authenticated
+     */
+    async isAuthenticated() {
+        if (this.authService) {
+            return await this.authService.isAuthenticated();
+        }
+        return false;
+    }
+    /**
+     * Get current user credentials (from auth service only)
      */
     async getCurrentCredentials() {
-        // Try to get from authentication service first
+        // Only get from authentication service - no fallback to hardcoded credentials
         if (this.authService) {
             const credentials = await this.authService.getActiveUserCredentials();
             if (credentials) {
                 return credentials;
             }
-            // Fallback to settings if no authenticated user
-            const fallback = this.authService.getFallbackCredentials();
-            if (fallback) {
-                return fallback;
-            }
         }
-        // Legacy fallback - get from settings
-        const config = (0, settings_1.getJiraConfig)();
-        if (!config.email || !config.apiToken || !config.baseUrl) {
-            throw new Error('No JIRA credentials found. Please sign in or configure settings.');
-        }
-        return {
-            email: config.email,
-            apiToken: config.apiToken,
-            baseUrl: config.baseUrl
-        };
+        // No fallback - user must be authenticated
+        throw new Error('No JIRA credentials found. Please sign in to continue.');
     }
     async logTime(ticketId, timeSpentMinutes) {
         const endpoint = `/rest/api/2/issue/${ticketId}/worklog`;
