@@ -32,6 +32,13 @@ export class BranchChangeService {
     private isInitialized = false;
     public onTicketAutoPopulated?: (ticketInfo: BranchTicketInfo) => void;
 
+    /**
+     * Get the GitService instance for external access
+     */
+    public getGitService(): GitService {
+        return this.gitService;
+    }
+
     constructor(timeLogger: JiraTimeLogger, context: vscode.ExtensionContext, outputChannel: vscode.OutputChannel, gitOutputChannel: vscode.OutputChannel, authService: AuthenticationService) {
         this.timeLogger = timeLogger;
         this.context = context;

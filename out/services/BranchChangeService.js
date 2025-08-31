@@ -5,6 +5,12 @@ const vscode = require("vscode");
 const GitService_1 = require("./GitService");
 const JiraService_1 = require("./JiraService");
 class BranchChangeService {
+    /**
+     * Get the GitService instance for external access
+     */
+    getGitService() {
+        return this.gitService;
+    }
     constructor(timeLogger, context, outputChannel, gitOutputChannel, authService) {
         this.isInitialized = false;
         this.timeLogger = timeLogger;

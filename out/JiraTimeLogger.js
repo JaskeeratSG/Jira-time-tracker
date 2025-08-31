@@ -143,6 +143,44 @@ class JiraTimeLogger {
             return null;
         }
     }
+    /**
+     * Auto-start timer when human file changes are detected
+     */
+    async autoStartTimerOnFileChange(fileChangeEvent) {
+        try {
+            // Check if timer is already running
+            if (this.isRunning) {
+                this.log(`⏭️ Timer already running, skipping auto-start for file: ${fileChangeEvent.filePath}`);
+                return;
+            }
+            // Check authentication
+            if (!(await this.jiraService.isAuthenticated())) {
+                this.log(`⚠️ User not authenticated, skipping auto-start for file: ${fileChangeEvent.filePath}`);
+                return;
+            }
+            // Check if we have a current issue (ticket)
+            if (!this.currentIssue) {
+                this.log(`⚠️ No current ticket set, skipping auto-start for file: ${fileChangeEvent.filePath}`);
+                this.log(`💡 Please select a ticket first using the sidebar or commands`);
+                return;
+            }
+            // Use the branch from the file change event
+            const eventBranch = fileChangeEvent.branch;
+            if (eventBranch) {
+                this.log(`🚀 Auto-starting timer for file change: ${fileChangeEvent.filePath} on branch: ${eventBranch}`);
+                this.log(`🎯 Using current ticket: ${this.currentIssue}`);
+                await this.startTimer();
+                // Show notification
+                vscode.window.showInformationMessage(`Timer auto-started for ${eventBranch} branch (Ticket: ${this.currentIssue})`, 'View Timer');
+            }
+            else {
+                this.log(`⚠️ No branch information in file change event, skipping auto-start`);
+            }
+        }
+        catch (error) {
+            this.log(`❌ Error in auto-start timer: ${error}`);
+        }
+    }
     async finishAndLog() {
         // Check authentication first
         if (!(await this.jiraService.isAuthenticated())) {

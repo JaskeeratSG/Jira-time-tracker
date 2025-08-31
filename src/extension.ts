@@ -372,6 +372,16 @@ export function activate(context: vscode.ExtensionContext) {
         const gitOutputChannel = createOutputChannel('Jira Time Tracker - Git Service');
         const branchChangeService = new BranchChangeService(timeLogger, context, branchChangeOutputChannel, gitOutputChannel, authService);
         
+        // Connect file change events to auto-start timer
+        branchChangeService.getGitService().onFileChange(async (fileChangeEvent) => {
+            outputChannel.appendLine(`📝 File change detected: ${fileChangeEvent.filePath} on branch: ${fileChangeEvent.branch}`);
+            try {
+                await timeLogger.autoStartTimerOnFileChange(fileChangeEvent);
+            } catch (error) {
+                outputChannel.appendLine(`❌ Error handling file change event: ${error}`);
+            }
+        });
+        
         // Auto-initialize branch detection on extension activation with error handling
         branchChangeService.initialize().then(() => {
             outputChannel.appendLine('✅ Branch detection auto-initialized successfully');

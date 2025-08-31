@@ -21,6 +21,14 @@ export interface CommitEvent {
     author?: string; // Added for author information
 }
 
+interface FileChangeEvent {
+    workspacePath: string;
+    branch: string;
+    filePath: string;
+    changeType: 'create' | 'change' | 'delete';
+    timestamp: number;
+}
+
 export interface GitRepositoryInfo {
     path: string;
     branch: string;
@@ -42,6 +50,7 @@ export class GitService {
     private repositoryChangeDisposable?: vscode.Disposable;
     private fileWatchers: Map<string, vscode.FileSystemWatcher> = new Map();
     private headFileWatchers: Map<string, vscode.FileSystemWatcher> = new Map(); // Added for debug logging
+    private fileChangeCallbacks: ((event: FileChangeEvent) => void)[] = []; // Added for file change callbacks
 
     constructor(private jiraService: JiraService, outputChannel: vscode.OutputChannel) {
         this.outputChannel = outputChannel;
@@ -250,6 +259,143 @@ export class GitService {
         
         // Also set up a periodic check for new commits
         this.setupPeriodicCommitCheck(repoPath);
+        
+        // Setup source file watcher to detect human changes
+        this.setupSourceFileWatcher(repoPath);
+    }
+
+    /**
+     * Setup source file watchers for a repository to detect human changes
+     */
+    private setupSourceFileWatcher(repoPath: string): void {
+        this.outputChannel.appendLine(`🔍 [SOURCE WATCHER] Setting up source file watcher for: ${repoPath}`);
+        
+        // Watch for changes in source files (excluding .git, node_modules, etc.)
+        const sourceWatcher = vscode.workspace.createFileSystemWatcher(
+            path.join(repoPath, '**')
+        );
+        
+        sourceWatcher.onDidChange(async (uri) => {
+            await this.handleSourceFileChange(repoPath, uri.fsPath, 'change');
+        });
+        
+        sourceWatcher.onDidCreate(async (uri) => {
+            await this.handleSourceFileChange(repoPath, uri.fsPath, 'create');
+        });
+        
+        sourceWatcher.onDidDelete(async (uri) => {
+            await this.handleSourceFileChange(repoPath, uri.fsPath, 'delete');
+        });
+        
+        this.outputChannel.appendLine(`✅ [SOURCE WATCHER] Source file watcher set up for ${repoPath}`);
+    }
+
+    /**
+     * Handle source file changes and filter out background/hidden files
+     */
+    private async handleSourceFileChange(repoPath: string, filePath: string, changeType: 'create' | 'change' | 'delete'): Promise<void> {
+        // Check if this file change should trigger the timer
+        if (!this.shouldTriggerTimer(filePath)) {
+            this.outputChannel.appendLine(`⏭️ [SOURCE WATCHER] Skipping background file: ${filePath} (${changeType})`);
+            return;
+        }
+        
+        this.outputChannel.appendLine(`🔍 [SOURCE WATCHER] Human file change detected in ${repoPath}: ${filePath} (${changeType})`);
+        
+        const currentBranch = await this.getCurrentBranchFromFile(repoPath);
+        if (currentBranch === 'unknown') {
+            this.outputChannel.appendLine(`⚠️ Cannot determine branch for ${filePath}, skipping file change event.`);
+            return;
+        }
+
+        const event: FileChangeEvent = {
+            workspacePath: repoPath,
+            branch: currentBranch,
+            filePath: filePath,
+            changeType: changeType,
+            timestamp: Date.now()
+        };
+
+        this.outputChannel.appendLine(`📝 [SOURCE WATCHER] Triggering file change event for: ${filePath} on branch: ${currentBranch}`);
+        
+        this.fileChangeCallbacks.forEach(callback => {
+            try {
+                callback(event);
+            } catch (error) {
+                this.outputChannel.appendLine(`❌ Error in file change callback: ${error}`);
+            }
+        });
+    }
+
+    /**
+     * Check if a file change should trigger the timer (filter out background/hidden files)
+     */
+    private shouldTriggerTimer(filePath: string): boolean {
+        // Get just the filename and extension
+        const fileName = path.basename(filePath);
+        const fileExt = path.extname(filePath).toLowerCase();
+        
+        // Skip hidden files and directories
+        if (fileName.startsWith('.')) {
+            return false;
+        }
+        
+        // Skip system and build files
+        const skipPatterns = [
+            // Build artifacts
+            'dist', 'build', 'coverage', '.nyc_output', '.next', '.nuxt', '.output',
+            // Dependencies
+            'node_modules', 'vendor', 'bower_components',
+            // IDE and editor files
+            '.vscode', '.idea', '.vs', '.sublime-project', '.sublime-workspace',
+            // OS files
+            '.DS_Store', 'Thumbs.db', 'desktop.ini',
+            // Logs and temp files
+            'logs', 'tmp', 'temp', 'cache',
+            // Git files
+            '.git', '.gitignore', '.gitattributes',
+            // Package files
+            'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml',
+            // Environment files
+            '.env.local', '.env.development.local', '.env.test.local', '.env.production.local'
+        ];
+        
+        // Check if any part of the path matches skip patterns
+        for (const pattern of skipPatterns) {
+            if (filePath.includes(pattern)) {
+                return false;
+            }
+        }
+        
+        // Skip certain file extensions that are typically not human-edited
+        const skipExtensions = [
+            '.log', '.tmp', '.temp', '.cache', '.lock', '.min.js', '.min.css',
+            '.map', '.d.ts.map', '.js.map', '.css.map'
+        ];
+        
+        if (skipExtensions.includes(fileExt)) {
+            return false;
+        }
+        
+        // Allow common source file extensions
+        const sourceExtensions = [
+            '.js', '.ts', '.jsx', '.tsx', '.vue', '.svelte', '.html', '.css', '.scss', '.sass',
+            '.less', '.styl', '.json', '.xml', '.yaml', '.yml', '.md', '.txt', '.sql',
+            '.py', '.java', '.cpp', '.c', '.h', '.hpp', '.cs', '.php', '.rb', '.go',
+            '.rs', '.swift', '.kt', '.scala', '.clj', '.hs', '.elm', '.fs', '.dart'
+        ];
+        
+        if (sourceExtensions.includes(fileExt)) {
+            return true;
+        }
+        
+        // Allow files without extensions (config files, etc.)
+        if (fileExt === '') {
+            return true;
+        }
+        
+        // Default: allow the file change
+        return true;
     }
 
     private setupPeriodicCommitCheck(repoPath: string): void {
@@ -904,7 +1050,15 @@ export class GitService {
 
     public onCommitChange(callback: (event: CommitEvent) => void): void {
         this.commitCallbacks.push(callback);
-        this.outputChannel.appendLine(`📝 Registered commit change callback (total: ${this.commitCallbacks.length})`);
+        this.outputChannel.appendLine(`✅ Commit change callback registered`);
+    }
+
+    /**
+     * Register a callback for file change events
+     */
+    public onFileChange(callback: (event: FileChangeEvent) => void): void {
+        this.fileChangeCallbacks.push(callback);
+        this.outputChannel.appendLine(`✅ File change callback registered`);
     }
 
     public offCommitChange(callback: (event: CommitEvent) => void): void {
