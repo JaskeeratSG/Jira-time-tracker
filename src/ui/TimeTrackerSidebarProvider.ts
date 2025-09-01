@@ -150,7 +150,7 @@ export class TimeTrackerSidebarProvider implements vscode.WebviewViewProvider {
             const config = vscode.workspace.getConfiguration('jiraTimeTracker');
             const enableLogging = config.get<boolean>('enableLogging', false);
             if (enableLogging) {
-                this._outputChannel.show(true);
+                // this._outputChannel.show(true); // Disabled to prevent auto-opening
             }
 
             webviewView.webview.options = {

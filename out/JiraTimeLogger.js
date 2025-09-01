@@ -26,27 +26,23 @@ class JiraTimeLogger {
      */
     isLoggingEnabled() {
         const config = vscode.workspace.getConfiguration('jiraTimeTracker');
-        return config.get('enableLogging', false);
+        return config.get('enableLogging', true); // Always enabled by default
     }
     log(message, showOutput = false) {
-        // Check if logging is enabled via configuration
-        if (!this.isLoggingEnabled()) {
-            return; // Silent mode - no output
-        }
+        // Always log to console and output channel
         console.log(message);
         this.outputChannel.appendLine(message);
+        // Only show output channel when explicitly requested
         if (showOutput) {
-            this.outputChannel.show(true);
+            // this.outputChannel.show(true); // Disabled to prevent auto-opening
         }
     }
     /**
      * Show the output channel for debugging Productive integration
      */
     showProductiveOutput() {
-        if (!this.isLoggingEnabled()) {
-            return; // Silent mode - don't show output channel
-        }
-        this.outputChannel.show(true);
+        // Only show output channel when explicitly requested
+        // this.outputChannel.show(true); // Disabled to prevent auto-opening
     }
     updateJiraService(authService) {
         // Create a new JiraService with the authentication service
@@ -684,7 +680,7 @@ class JiraTimeLogger {
             }
             // Show output on error so user can see what went wrong (only if logging is enabled)
             if (this.isLoggingEnabled()) {
-                this.outputChannel.show(true);
+                // this.outputChannel.show(true); // Disabled to prevent auto-opening
             }
             throw new Error(`Productive integration failed: ${error.message}`);
         }
@@ -1172,7 +1168,7 @@ class JiraTimeLogger {
      */
     async findServiceForUserProject(credentials, personId, projectId) {
         const axios = require('axios');
-        this.log(`   🛠️ Finding appropriate service for user and project...`);
+        this.log(`   🔍 Finding appropriate service for user and project...`);
         try {
             // Step 1: Check if user has logged time to this project before (existing user method)
             this.log(`   📊 Checking if user has logged time to this project before...`);
@@ -1235,109 +1231,76 @@ class JiraTimeLogger {
                     return serviceId;
                 }).filter(Boolean));
                 this.log(`   📊 Unique service IDs found: ${Array.from(serviceIds).join(', ')}`);
-                if (serviceIds.size === 1) {
-                    // User always uses the same service - highest confidence
-                    const serviceId = Array.from(serviceIds)[0];
-                    let serviceName = 'Unknown Service';
-                    // Note: Service name not available in response, using ID
-                    serviceName = `Service ${serviceId}`;
-                    this.log(`   🎯 User consistently uses: ${serviceName} (${serviceId})`);
-                    return {
-                        serviceId: serviceId,
-                        serviceName: serviceName,
-                        confidence: 'HIGH (historical consistency)'
-                    };
-                }
-                else if (serviceIds.size > 1) {
-                    // User uses multiple services - find most frequent
-                    const serviceCounts = {};
-                    timeEntries.forEach((entry) => {
-                        const serviceId = entry.relationships?.service?.data?.id;
-                        if (serviceId) {
-                            serviceCounts[serviceId] = (serviceCounts[serviceId] || 0) + 1;
+                if (serviceIds.size > 0) {
+                    // STEP 2: Test each service from history with real-time logging
+                    this.log(`   🧪 Step 2: Testing services from your history with real-time logging...`);
+                    const servicesToTest = Array.from(serviceIds).map((serviceId) => ({
+                        id: serviceId,
+                        name: `Service ${serviceId}`,
+                        source: 'history'
+                    }));
+                    // Test each service from history
+                    for (const service of servicesToTest) {
+                        this.log(`   🧪 Testing service from history: ${service.name} (${service.id})`);
+                        try {
+                            // Try to create a real time entry (1 minute test)
+                            const testTimeEntry = {
+                                data: {
+                                    type: 'time_entries',
+                                    attributes: {
+                                        date: new Date().toISOString().split('T')[0],
+                                        time: 1,
+                                        note: 'Service permission test from history',
+                                        track_method_id: 1,
+                                        overhead: false
+                                    },
+                                    relationships: {
+                                        person: { data: { type: 'people', id: personId } },
+                                        project: { data: { type: 'projects', id: projectId } },
+                                        service: { data: { type: 'services', id: service.id } },
+                                        organization: { data: { type: 'organizations', id: credentials.organizationId } }
+                                    }
+                                }
+                            };
+                            const response = await axios.post(`${credentials.baseUrl}/time_entries`, testTimeEntry, {
+                                headers: {
+                                    'Content-Type': 'application/vnd.api+json',
+                                    'X-Auth-Token': credentials.apiToken,
+                                    'X-Organization-Id': credentials.organizationId
+                                }
+                            });
+                            if (response.status === 201) {
+                                this.log(`   ✅ Service ${service.name} from history works! Permission verified.`);
+                                // Delete the test entry immediately
+                                await axios.delete(`${credentials.baseUrl}/time_entries/${response.data.data.id}`, {
+                                    headers: {
+                                        'X-Auth-Token': credentials.apiToken,
+                                        'X-Organization-Id': credentials.organizationId
+                                    }
+                                });
+                                return {
+                                    serviceId: service.id,
+                                    serviceName: service.name,
+                                    confidence: 'HIGH (history + permission verified)'
+                                };
+                            }
                         }
-                    });
-                    const mostUsedServiceId = Object.keys(serviceCounts).reduce((a, b) => serviceCounts[a] > serviceCounts[b] ? a : b);
-                    let serviceName = 'Unknown Service';
-                    // Note: Service name not available in response, using ID
-                    serviceName = `Service ${mostUsedServiceId}`;
-                    this.log(`   🎯 User's most used service: ${serviceName} (${mostUsedServiceId})`);
-                    return {
-                        serviceId: mostUsedServiceId,
-                        serviceName: serviceName,
-                        confidence: 'MEDIUM (most used from history)'
-                    };
-                }
-            }
-            // Step 2: First-time user - analyze what services are used in this project
-            this.log(`   ⚠️ User has no previous time entries. Analyzing project services for first-time user...`);
-            const projectTimeEntriesResponse = await axios.get(`${credentials.baseUrl}/time_entries?filter[project_id]=${projectId}&page[size]=50&include=service`, {
-                headers: {
-                    'Content-Type': 'application/vnd.api+json',
-                    'X-Auth-Token': credentials.apiToken,
-                    'X-Organization-Id': credentials.organizationId
-                }
-            });
-            if (projectTimeEntriesResponse.data.data && projectTimeEntriesResponse.data.data.length > 0) {
-                this.log(`   📊 Found ${projectTimeEntriesResponse.data.data.length} time entries in this project`);
-                // Extract unique services used in this project
-                const serviceIds = new Set(projectTimeEntriesResponse.data.data.map((entry) => entry.relationships?.service?.data?.id).filter(Boolean));
-                this.log(`   🎯 Found ${serviceIds.size} unique services used in this project`);
-                // Note: Service details not available in response, using IDs
-                this.log('   🛠️ Services used in this project:');
-                Array.from(serviceIds).forEach((serviceId) => {
-                    const serviceIdStr = serviceId;
-                    this.log(`      • Service ${serviceIdStr} (${serviceIdStr})`);
-                });
-                if (serviceIds.size === 1) {
-                    // Perfect! Project uses exactly one service
-                    const serviceId = Array.from(serviceIds)[0];
-                    this.log(`   ✅ Perfect! This project uses exactly one service: Service ${serviceId}`);
-                    return {
-                        serviceId: serviceId,
-                        serviceName: `Service ${serviceId}`,
-                        confidence: 'HIGH (project uses single service)'
-                    };
-                }
-                else if (serviceIds.size > 1) {
-                    // Multiple services - find most commonly used
-                    const serviceCounts = {};
-                    projectTimeEntriesResponse.data.forEach((entry) => {
-                        const serviceId = entry.relationships?.service?.data?.id;
-                        if (serviceId) {
-                            serviceCounts[serviceId] = (serviceCounts[serviceId] || 0) + 1;
+                        catch (error) {
+                            if (error.response?.status === 422) {
+                                this.log(`   ❌ Service ${service.name} from history failed: ${error.response.data?.errors?.[0]?.title || 'Unknown error'}`);
+                            }
+                            else {
+                                this.log(`   ⚠️ Service ${service.name} from history error: ${error.message}`);
+                            }
+                            // Continue to next service from history
                         }
-                    });
-                    const mostUsedServiceId = Object.keys(serviceCounts).reduce((a, b) => serviceCounts[a] > serviceCounts[b] ? a : b);
-                    this.log(`   🎯 Multiple services available. Suggesting most used: Service ${mostUsedServiceId}`);
-                    return {
-                        serviceId: mostUsedServiceId,
-                        serviceName: `Service ${mostUsedServiceId}`,
-                        confidence: 'MEDIUM (most used in project)'
-                    };
+                    }
+                    this.log(`   ⚠️ All services from history failed. Moving to Step 3...`);
                 }
             }
-            // Step 3: Fallback - no time entries in project, get any available service
-            this.log(`   ⚠️ No time entries found in this project. Getting available services...`);
-            const allServicesResponse = await axios.get(`${credentials.baseUrl}/services`, {
-                headers: {
-                    'Content-Type': 'application/vnd.api+json',
-                    'X-Auth-Token': credentials.apiToken,
-                    'X-Organization-Id': credentials.organizationId
-                }
-            });
-            const allServices = allServicesResponse.data.data;
-            if (allServices.length > 0) {
-                const firstService = allServices[0];
-                this.log(`   ⚠️ Using first available service as fallback: ${firstService.attributes.name}`);
-                this.log(`   💡 Tip: Configure defaultServiceId in VS Code settings for reliable service selection`);
-                return {
-                    serviceId: firstService.id,
-                    serviceName: firstService.attributes.name,
-                    confidence: 'LOW (fallback service)'
-                };
-            }
-            throw new Error('No services available in organization');
+            // STEP 3: Fallback to testing all project services
+            this.log(`   📊 Step 3: Testing all available services for this project...`);
+            return await this.testAllProjectServices(credentials, personId, projectId);
         }
         catch (error) {
             throw new Error(`Service discovery failed: ${error.message}`);
@@ -1622,7 +1585,7 @@ class JiraTimeLogger {
             }
             // Show output on error (only if logging is enabled)
             if (this.isLoggingEnabled()) {
-                this.outputChannel.show(true);
+                // this.outputChannel.show(true); // Disabled to prevent auto-opening
             }
         }
     }
@@ -1656,7 +1619,130 @@ class JiraTimeLogger {
         this.log(`   PRODUCTIVE_PERSON_ID: ${process.env.PRODUCTIVE_PERSON_ID || 'Not set'}`);
         // Show output channel (only if logging is enabled)
         if (this.isLoggingEnabled()) {
-            this.outputChannel.show(true);
+            // this.outputChannel.show(true); // Disabled to prevent auto-opening
+        }
+    }
+    /**
+     * Get project services
+     */
+    async getProjectServices(credentials, projectId) {
+        const axios = require('axios');
+        try {
+            // Method 1: Try project services endpoint
+            const projectServicesResponse = await axios.get(`${credentials.baseUrl}/projects/${projectId}/services`, {
+                headers: {
+                    'Content-Type': 'application/vnd.api+json',
+                    'X-Auth-Token': credentials.apiToken,
+                    'X-Organization-Id': credentials.organizationId
+                }
+            });
+            if (projectServicesResponse.data.data) {
+                this.log(`   ✅ Found ${projectServicesResponse.data.data.length} services for this project`);
+                return projectServicesResponse.data.data;
+            }
+            // Method 2: Fallback to services with project filter
+            const filteredServicesResponse = await axios.get(`${credentials.baseUrl}/services?filter[project_id]=${projectId}`, {
+                headers: {
+                    'Content-Type': 'application/vnd.api+json',
+                    'X-Auth-Token': credentials.apiToken,
+                    'X-Organization-Id': credentials.organizationId
+                }
+            });
+            if (filteredServicesResponse.data.data) {
+                this.log(`   ✅ Found ${filteredServicesResponse.data.data.length} services for this project (filtered)`);
+                return filteredServicesResponse.data.data;
+            }
+            // Method 3: Last resort - get all services but warn
+            this.log(`   ⚠️ Could not get project-specific services, falling back to all services`);
+            const allServicesResponse = await axios.get(`${credentials.baseUrl}/services`, {
+                headers: {
+                    'Content-Type': 'application/vnd.api+json',
+                    'X-Auth-Token': credentials.apiToken,
+                    'X-Organization-Id': credentials.organizationId
+                }
+            });
+            return allServicesResponse.data.data;
+        }
+        catch (error) {
+            this.log(`   ❌ Failed to get project services: ${error.message}`);
+            throw error;
+        }
+    }
+    /**
+     * Test all project services (fallback method)
+     */
+    async testAllProjectServices(credentials, personId, projectId) {
+        const axios = require('axios');
+        try {
+            // Get all available services for this project
+            const projectServices = await this.getProjectServices(credentials, projectId);
+            const availableServices = projectServices.filter(service => service.attributes.deleted_at === null &&
+                service.attributes.time_tracking_enabled);
+            if (availableServices.length === 0) {
+                throw new Error('No available services found for this project');
+            }
+            this.log(`   📊 Found ${availableServices.length} available services to test...`);
+            // Test each service until we find one that works
+            for (const service of availableServices) {
+                this.log(`   🧪 Testing project service: ${service.attributes.name} (${service.id})`);
+                try {
+                    // Try to create a real time entry (1 minute test)
+                    const testTimeEntry = {
+                        data: {
+                            type: 'time_entries',
+                            attributes: {
+                                date: new Date().toISOString().split('T')[0],
+                                time: 1,
+                                note: 'Service permission test for project',
+                                track_method_id: 1,
+                                overhead: false
+                            },
+                            relationships: {
+                                person: { data: { type: 'people', id: personId } },
+                                project: { data: { type: 'projects', id: projectId } },
+                                service: { data: { type: 'services', id: service.id } },
+                                organization: { data: { type: 'organizations', id: credentials.organizationId } }
+                            }
+                        }
+                    };
+                    const response = await axios.post(`${credentials.baseUrl}/time_entries`, testTimeEntry, {
+                        headers: {
+                            'Content-Type': 'application/vnd.api+json',
+                            'X-Auth-Token': credentials.apiToken,
+                            'X-Organization-Id': credentials.organizationId
+                        }
+                    });
+                    if (response.status === 201) {
+                        this.log(`   ✅ Service ${service.attributes.name} works! Permission verified.`);
+                        // Delete the test entry immediately
+                        await axios.delete(`${credentials.baseUrl}/time_entries/${response.data.data.id}`, {
+                            headers: {
+                                'X-Auth-Token': credentials.apiToken,
+                                'X-Organization-Id': credentials.organizationId
+                            }
+                        });
+                        return {
+                            serviceId: service.id,
+                            serviceName: service.attributes.name,
+                            confidence: 'MEDIUM (project service + permission verified)'
+                        };
+                    }
+                }
+                catch (error) {
+                    if (error.response?.status === 422) {
+                        this.log(`   ❌ Service ${service.attributes.name} failed: ${error.response.data?.errors?.[0]?.title || 'Unknown error'}`);
+                    }
+                    else {
+                        this.log(`   ⚠️ Service ${service.attributes.name} error: ${error.message}`);
+                    }
+                    // Continue to next service
+                }
+            }
+            throw new Error('No working services found for this project');
+        }
+        catch (error) {
+            this.log(`   ❌ Project service testing failed: ${error.message}`);
+            throw error;
         }
     }
 }

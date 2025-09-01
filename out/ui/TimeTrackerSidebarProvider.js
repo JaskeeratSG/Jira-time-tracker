@@ -106,7 +106,7 @@ class TimeTrackerSidebarProvider {
             const config = vscode.workspace.getConfiguration('jiraTimeTracker');
             const enableLogging = config.get('enableLogging', false);
             if (enableLogging) {
-                this._outputChannel.show(true);
+                // this._outputChannel.show(true); // Disabled to prevent auto-opening
             }
             webviewView.webview.options = {
                 enableScripts: true,
