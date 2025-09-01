@@ -1,10 +1,3 @@
-# Jira-time-tracker
-
-## Configuration
-
-### VS Code Settings
-
-Add the following to your VS Code settings (`settings.json`):
 
 ```json
 {

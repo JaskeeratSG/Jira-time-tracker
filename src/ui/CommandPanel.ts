@@ -8,6 +8,7 @@ export class CommandPanel {
     private _disposables: vscode.Disposable[] = [];
     private _timeLogger: JiraTimeLogger;
     private _updateInterval: NodeJS.Timer | undefined;
+    //testing file change auto start
 
     private constructor(panel: vscode.WebviewPanel, timeLogger: JiraTimeLogger) {
         this._panel = panel;

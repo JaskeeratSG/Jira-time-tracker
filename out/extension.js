@@ -296,6 +296,12 @@ function activate(context) {
         const branchChangeOutputChannel = (0, outputChannel_1.createOutputChannel)('Jira Time Tracker - Branch Detection');
         const gitOutputChannel = (0, outputChannel_1.createOutputChannel)('Jira Time Tracker - Git Service');
         const branchChangeService = new BranchChangeService_1.BranchChangeService(timeLogger, context, branchChangeOutputChannel, gitOutputChannel, authService);
+        // Connect JiraTimeLogger to BranchChangeService for UI updates
+        timeLogger.setOnTicketPopulated((ticketInfo) => {
+            if (branchChangeService.onTicketAutoPopulated) {
+                branchChangeService.onTicketAutoPopulated(ticketInfo);
+            }
+        });
         // Connect file change events to auto-start timer
         branchChangeService.getGitService().onFileChange(async (fileChangeEvent) => {
             outputChannel.appendLine(`📝 File change detected: ${fileChangeEvent.filePath} on branch: ${fileChangeEvent.branch}`);

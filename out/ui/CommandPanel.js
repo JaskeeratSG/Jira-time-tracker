@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.CommandPanel = void 0;
 const vscode = require("vscode");
 class CommandPanel {
+    //testing file change auto start
     constructor(panel, timeLogger) {
         this._disposables = [];
         this._panel = panel;

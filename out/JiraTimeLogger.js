@@ -52,6 +52,12 @@ class JiraTimeLogger {
         // Create a new JiraService with the authentication service
         this.jiraService = new JiraService_1.JiraService(authService);
     }
+    /**
+     * Set callback for when ticket information is populated
+     */
+    setOnTicketPopulated(callback) {
+        this.onTicketPopulated = callback;
+    }
     async startTimer() {
         // Check authentication first
         if (!(await this.jiraService.isAuthenticated())) {
@@ -158,28 +164,124 @@ class JiraTimeLogger {
                 this.log(`⚠️ User not authenticated, skipping auto-start for file: ${fileChangeEvent.filePath}`);
                 return;
             }
-            // Check if we have a current issue (ticket)
-            if (!this.currentIssue) {
-                this.log(`⚠️ No current ticket set, skipping auto-start for file: ${fileChangeEvent.filePath}`);
-                this.log(`💡 Please select a ticket first using the sidebar or commands`);
-                return;
-            }
             // Use the branch from the file change event
             const eventBranch = fileChangeEvent.branch;
-            if (eventBranch) {
-                this.log(`🚀 Auto-starting timer for file change: ${fileChangeEvent.filePath} on branch: ${eventBranch}`);
-                this.log(`🎯 Using current ticket: ${this.currentIssue}`);
-                await this.startTimer();
-                // Show notification
-                vscode.window.showInformationMessage(`Timer auto-started for ${eventBranch} branch (Ticket: ${this.currentIssue})`, 'View Timer');
+            if (!eventBranch) {
+                this.log(`⚠️ No branch information in file change event, skipping auto-start`);
+                return;
+            }
+            // Find linked ticket for the current branch
+            this.log(`🔍 Checking for linked ticket on branch: ${eventBranch}`);
+            // Get the GitService from the BranchChangeService (if available)
+            // For now, we'll use a simple approach to find the ticket
+            const ticketKey = this.extractJiraTicketKey(eventBranch);
+            if (ticketKey) {
+                this.log(`🎯 Found ticket key in branch: ${ticketKey}`);
+                try {
+                    // Fetch ticket details from Jira
+                    const credentials = await this.jiraService.getCurrentCredentials();
+                    if (!credentials) {
+                        this.log(`⚠️ No Jira credentials available`);
+                        return;
+                    }
+                    const response = await axios_1.default.get(`${credentials.baseUrl}/rest/api/2/issue/${ticketKey}`, {
+                        auth: {
+                            username: credentials.email,
+                            password: credentials.apiToken
+                        },
+                        headers: {
+                            'Accept': 'application/json'
+                        }
+                    });
+                    if (response.data) {
+                        const ticketDetails = response.data;
+                        const projectKey = ticketDetails.fields.project.key;
+                        this.log(`✅ Found linked ticket: ${ticketKey} (${projectKey})`);
+                        // Set the current issue and project
+                        this.currentIssue = ticketKey;
+                        this.currentProject = projectKey;
+                        // Create ticket info for UI update
+                        const ticketInfo = {
+                            ticketId: ticketKey,
+                            projectKey: projectKey,
+                            summary: ticketDetails.fields.summary
+                        };
+                        // Trigger UI update callback if available
+                        if (this.onTicketPopulated) {
+                            this.onTicketPopulated(ticketInfo);
+                        }
+                        // Start the timer
+                        await this.startTimer();
+                        // Show notification
+                        vscode.window.showInformationMessage(`Timer auto-started for ${eventBranch} branch (Ticket: ${ticketKey})`, 'View Timer');
+                    }
+                    else {
+                        this.log(`⚠️ No ticket details found for: ${ticketKey}`);
+                    }
+                }
+                catch (error) {
+                    this.log(`❌ Error fetching ticket details for ${ticketKey}: ${error.message}`);
+                }
             }
             else {
-                this.log(`⚠️ No branch information in file change event, skipping auto-start`);
+                this.log(`⚠️ No linked ticket found for branch: ${eventBranch}, keeping timer stopped`);
             }
         }
         catch (error) {
             this.log(`❌ Error in auto-start timer: ${error}`);
         }
+    }
+    /**
+     * Extract Jira ticket key from branch name
+     */
+    extractJiraTicketKey(branchName) {
+        this.log(`🔍 Extracting Jira ticket key from branch: "${branchName}"`);
+        // Common patterns for Jira ticket keys in branch names
+        const patterns = [
+            {
+                name: "Basic pattern with numbers",
+                regex: /([A-Z0-9]+-\d+)/,
+                example: "CLUB59-234"
+            },
+            {
+                name: "Feature branch pattern",
+                regex: /(?:feature|bugfix|hotfix|release)\/([A-Z0-9]+-\d+)/i,
+                example: "feature/CLUB59-234"
+            },
+            {
+                name: "Branch prefix pattern",
+                regex: /(?:branch|b)\/([A-Z0-9]+-\d+)/i,
+                example: "branch/CLUB59-234"
+            },
+            {
+                name: "Conventional commit pattern",
+                regex: /(?:feat|fix|chore|task|story|bug)\/([A-Z0-9]+-\d+)/i,
+                example: "feat/CLUB59-234"
+            },
+            {
+                name: "Any prefix pattern",
+                regex: /(?:[a-zA-Z0-9_-]+)\/([A-Z0-9]+-\d+)/i,
+                example: "any-prefix/CLUB59-234"
+            },
+            {
+                name: "Standalone pattern",
+                regex: /^([A-Z0-9]+-\d+)$/i,
+                example: "CLUB59-234"
+            }
+        ];
+        for (let i = 0; i < patterns.length; i++) {
+            const pattern = patterns[i];
+            const match = branchName.match(pattern?.regex);
+            if (match) {
+                this.log(`✅ Pattern ${i + 1} matched: "${match[1]}" from branch "${branchName}"`);
+                return match[1]; // Return the captured ticket key
+            }
+            else {
+                this.log(`❌ Pattern ${i + 1} did not match: ${pattern}`);
+            }
+        }
+        this.log(`❌ No patterns matched for branch: "${branchName}"`);
+        return null;
     }
     async finishAndLog() {
         // Check authentication first
