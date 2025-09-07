@@ -6,6 +6,7 @@ import { GitService } from './services/GitService';
 import { getBranchName } from './utils/git';
 import { createOutputChannel } from './utils/outputChannel';
 import { BranchTicketInfo } from './services/BranchChangeService';
+import './config/settings';
 
 export class JiraTimeLogger {
     private timer: NodeJS.Timeout | null = null;
@@ -250,11 +251,16 @@ export class JiraTimeLogger {
                         // Start the timer
                         await this.startTimer();
                         
-                        // Show notification
-                        vscode.window.showInformationMessage(
+                        // Show notification with functional "View Details" button
+                        const action = await vscode.window.showInformationMessage(
                             `Timer auto-started for ${eventBranch} branch (Ticket: ${ticketKey})`,
-                            'View Timer'
+                            'View Details'  // Changed from 'View Timer'
                         );
+                        
+                        if (action === 'View Details') {  // Changed from 'View Timer'
+                            // Open the Jira Time Tracker sidebar
+                            await vscode.commands.executeCommand('jiraTimeTracker.sidebar.focus');
+                        }
                     } else {
                         this.log(`⚠️ No ticket details found for: ${ticketKey}`);
                     }
@@ -1307,84 +1313,8 @@ export class JiraTimeLogger {
         }
     }
 
-    private async discoverBestService(credentials: { apiToken: string; organizationId: string; baseUrl: string }, personId: string, projectId: string): Promise<{ serviceId: string; serviceName: string }> {
-        const axios = require('axios');
-        
-        this.log(`   🛠️ Finding service for user and project...`);
-        
-        try {
-            // Step 1: Check for configured default service (fastest)
-            const config = vscode.workspace.getConfiguration('jiraTimeTracker');
-            const defaultServiceId = config.get<string>('productive.defaultServiceId');
-            
-            if (defaultServiceId) {
-                this.log(`   🔍 Using configured default service: ${defaultServiceId}`);
-                return {
-                    serviceId: defaultServiceId,
-                    serviceName: 'Default Service'
-                };
-            }
-            
-            // Step 2: Get user's recent services (faster than full discovery)
-            this.log(`   📊 Getting user's recent services...`);
-            const recentServicesResponse = await axios.get(
-                `${credentials.baseUrl}/time_entries?filter[person_id]=${personId}&page[size]=10&include=service`,
-                {
-                headers: {
-                    'Content-Type': 'application/vnd.api+json',
-                    'X-Auth-Token': credentials.apiToken,
-                    'X-Organization-Id': credentials.organizationId
-                }
-                }
-            );
-            
-            const recentEntries = recentServicesResponse.data.data || [];
-            
-            if (recentEntries.length > 0) {
-                // Use the most recent service
-                const mostRecentEntry = recentEntries[0];
-                const serviceId = mostRecentEntry.relationships?.service?.data?.id;
-                
-                if (serviceId) {
-                    let serviceName = 'Recent Service';
-                    // Note: Service name not available in response, using ID
-                    serviceName = `Service ${serviceId}`;
-                    
-                    this.log(`   ✅ Using most recent service: ${serviceName}`);
-                    return { serviceId, serviceName };
-                }
-            }
-            
-            // Step 3: Fallback to first available service
-            this.log(`   📊 Getting available services...`);
-            const servicesResponse = await axios.get(`${credentials.baseUrl}/services?page[size]=10`, {
-                headers: {
-                    'Content-Type': 'application/vnd.api+json',
-                    'X-Auth-Token': credentials.apiToken,
-                    'X-Organization-Id': credentials.organizationId
-                }
-            });
-            
-            const services = servicesResponse.data.data;
-            if (services.length > 0) {
-                const fallbackService = services[0];
-                this.log(`   ⚠️ Using fallback service: ${fallbackService.attributes.name}`);
-                return {
-                    serviceId: fallbackService.id,
-                    serviceName: fallbackService.attributes.name
-                };
-            }
-            
-            throw new Error('No services found');
-            
-        } catch (error: any) {
-            this.log(`   ❌ Error finding service: ${error.message}`);
-            throw error;
-        }
-    }
-
     /**
-     * Find service for user and project (EXACT test method)
+     * Find service for user and project using the new service assignments API
      */
     private async findServiceForUserProject(
         credentials: { apiToken: string; organizationId: string; baseUrl: string },
@@ -1393,46 +1323,140 @@ export class JiraTimeLogger {
     ): Promise<{ serviceId: string; serviceName: string; confidence: string }> {
         const axios = require('axios');
         
-        this.log(`   🔍 Finding appropriate service for user and project...`);
+        this.log(`   🔍 Finding appropriate service for user and project using new API...`);
         
         try {
+            // NEW APPROACH: Use service assignments with project relationships
+            this.log(`   📊 Using service assignments API with project relationships...`);
             
-            // Step 1: Check if user has logged time to this project before (existing user method)
+            // Get admin token for service discovery
+            const adminToken = process.env.PRODUCTIVE_ADMIN_TOKEN;
+            if (!adminToken) {
+                this.log(`   ⚠️ No admin token found, falling back to legacy method`);
+                return await this.findServiceForUserProjectLegacy(credentials, personId, projectId);
+            }
+            
+            const serviceAssignmentsResponse = await axios.get(
+                `${credentials.baseUrl}/service_assignments?filter[person_id]=${personId}&include=service,service.deal,service.deal.project`,
+                {
+                    headers: {
+                        'Content-Type': 'application/vnd.api+json',
+                        'X-Auth-Token': adminToken, // Use admin token for service discovery
+                        'X-Organization-Id': credentials.organizationId
+                    }
+                }
+            );
+            
+            if (!serviceAssignmentsResponse.data.data || serviceAssignmentsResponse.data.data.length === 0) {
+                this.log(`   ⚠️ No service assignments found for user, falling back to legacy method`);
+                return await this.findServiceForUserProjectLegacy(credentials, personId, projectId);
+            }
+            
+            // Extract services with project relationships
+            const servicesWithProjects = serviceAssignmentsResponse.data.included
+                .filter((item: any) => item.type === 'services')
+                .map((service: any) => {
+                    const deal = serviceAssignmentsResponse.data.included.find((d: any) => 
+                        d.type === 'deals' && d.id === service.relationships.deal.data.id
+                    );
+                    const project = serviceAssignmentsResponse.data.included.find((p: any) => 
+                        p.type === 'projects' && p.id === deal.relationships.project.data.id
+                    );
+                    
+                    return {
+                        serviceId: service.id,
+                        serviceName: service.attributes.name,
+                        futureBookedTime: service.attributes.future_booked_time,
+                        billable: service.attributes.billable,
+                        timeTrackingEnabled: service.attributes.time_tracking_enabled,
+                        projectId: project.id,
+                        projectName: project.attributes.name,
+                        dealName: deal.attributes.name,
+                        dealDate: deal.attributes.date
+                    };
+                });
+            
+            this.log(`   📊 Found ${servicesWithProjects.length} services with project relationships`);
+            
+            // Filter by target project if specified
+            let candidateServices = servicesWithProjects;
+            if (projectId) {
+                candidateServices = servicesWithProjects.filter((s: {
+                    projectId: string;
+                }) => s.projectId === projectId);
+                this.log(`   📊 Filtered to ${candidateServices.length} services for project ${projectId}`);
+            }
+            
+            // Find service with highest future_booked_time
+            const activeServices = candidateServices
+                .filter((s: any) => s.futureBookedTime > 0 && s.timeTrackingEnabled)
+                .sort((a: any, b: any) => b.futureBookedTime - a.futureBookedTime);
+
+            if (activeServices.length > 0) {
+                const bestService = activeServices[0];
+                this.log(`   ✅ Found active service: ${bestService.serviceName} (${bestService.serviceId})`);
+                this.log(`    Future booked time: ${bestService.futureBookedTime} minutes`);
+                this.log(`   📊 Project: ${bestService.projectName}`);
+                this.log(`   📊 Deal: ${bestService.dealName}`);
+                
+                return {
+                    serviceId: bestService.serviceId,
+                    serviceName: bestService.serviceName,
+                    confidence: 'HIGH (service assignments + future bookings)'
+                };
+            }
+            
+            // Fallback: Use any service for the project (even without future bookings)
+            const fallbackServices = candidateServices
+                .filter((s: {
+                    timeTrackingEnabled: boolean;
+                }) => s.timeTrackingEnabled)
+                .sort(
+                    (
+                        a: { futureBookedTime: number },
+                        b: { futureBookedTime: number }
+                    ) => b.futureBookedTime - a.futureBookedTime
+                );
+
+            if (fallbackServices.length > 0) {
+                const fallbackService = fallbackServices[0];
+                this.log(`   ⚠️ Using fallback service: ${fallbackService.serviceName} (${fallbackService.serviceId})`);
+                this.log(`   📊 Project: ${fallbackService.projectName}`);
+                
+                return {
+                    serviceId: fallbackService.serviceId,
+                    serviceName: fallbackService.serviceName,
+                    confidence: 'MEDIUM (service assignments, no future bookings)'
+                };
+            }
+            
+            this.log(`   ⚠️ No suitable services found, falling back to legacy method`);
+            return await this.findServiceForUserProjectLegacy(credentials, personId, projectId);
+            
+        } catch (error: any) {
+            this.log(`   ❌ New service discovery failed: ${error.message}`);
+            this.log(`   🔄 Falling back to legacy method...`);
+            return await this.findServiceForUserProjectLegacy(credentials, personId, projectId);
+        }
+    }
+
+    /**
+     * Legacy service discovery method (fallback)
+     */
+    private async findServiceForUserProjectLegacy(
+        credentials: { apiToken: string; organizationId: string; baseUrl: string },
+        personId: string,
+        projectId: string
+    ): Promise<{ serviceId: string; serviceName: string; confidence: string }> {
+        const axios = require('axios');
+        
+        this.log(`   🔍 Using legacy service discovery method...`);
+        
+        try {
+            // Step 1: Check if user has logged time to this project before
             this.log(`   📊 Checking if user has logged time to this project before...`);
             let timeEntriesResponse = await axios.get(
                 `${credentials.baseUrl}/time_entries?filter[person_id]=${personId}&filter[project_id]=${projectId}&page[size]=50&include=service`,
-                {
-                        headers: {
-                            'Content-Type': 'application/vnd.api+json',
-                            'X-Auth-Token': credentials.apiToken,
-                            'X-Organization-Id': credentials.organizationId
-                        }
-                }
-            );
-                    
-            let timeEntries = timeEntriesResponse.data.data || [];
-            this.log(`   📊 API Response structure: ${JSON.stringify(Object.keys(timeEntriesResponse))}`);
-            this.log(`   📊 Data type: ${typeof timeEntriesResponse.data}`);
-            this.log(`   📊 Data keys: ${timeEntriesResponse.data ? Object.keys(timeEntriesResponse.data) : 'undefined'}`);
-            this.log(`   📊 Found ${timeEntries.length} previous time entries by this user`);
-            
-            // Debug: Log the actual structure
-            if (timeEntries.length > 0) {
-                this.log(`   🔍 Sample entry structure:`);
-                this.log(`   📋 Entry ID: ${timeEntries[0].id}`);
-                this.log(`   📋 Date: ${timeEntries[0].attributes.date}`);
-                this.log(`   📋 Time: ${timeEntries[0].attributes.time}`);
-                this.log(`   📋 Note: ${timeEntries[0].attributes.note}`);
-                this.log(`   📋 Service ID: ${timeEntries[0].relationships?.service?.data?.id}`);
-                this.log(`   📋 Available relationships: ${Object.keys(timeEntries[0].relationships || {}).join(', ')}`);
-            }
-            
-            // Approach 2: If no entries found, try without project filter (user's recent entries)
-            if (timeEntries.length === 0) {
-                try {
-                    this.log(`   📊 Trying approach 2: User's recent entries without project filter...`);
-                    const userEntriesResponse = await axios.get(
-                        `${credentials.baseUrl}/time_entries?filter[person_id]=${personId}&page[size]=100&include=service`,
                 {
                     headers: {
                         'Content-Type': 'application/vnd.api+json',
@@ -1441,11 +1465,27 @@ export class JiraTimeLogger {
                     }
                 }
             );
+                    
+            let timeEntries = timeEntriesResponse.data.data || [];
+            this.log(`   📊 Found ${timeEntries.length} previous time entries by this user`);
+            
+            // Approach 2: If no entries found, try without project filter
+            if (timeEntries.length === 0) {
+                try {
+                    this.log(`    Trying approach 2: User's recent entries without project filter...`);
+                    const userEntriesResponse = await axios.get(
+                        `${credentials.baseUrl}/time_entries?filter[person_id]=${personId}&page[size]=100&include=service`,
+                        {
+                            headers: {
+                                'Content-Type': 'application/vnd.api+json',
+                                'X-Auth-Token': credentials.apiToken,
+                                'X-Organization-Id': credentials.organizationId
+                            }
+                        }
+                    );
                     const userEntries = userEntriesResponse.data.data || [];
                     this.log(`   📊 Approach 2: Found ${userEntries.length} user entries total`);
                     
-                    // Note: Cannot filter by project since project relationship is not included
-                    // Just use all user entries for service analysis
                     if (userEntries.length > 0) {
                         timeEntries = userEntries;
                         timeEntriesResponse = userEntriesResponse;
@@ -1457,7 +1497,7 @@ export class JiraTimeLogger {
             }
             
             if (timeEntries.length > 0) {
-                // User has logged time before - use historical analysis (PROVEN HIGH CONFIDENCE METHOD)
+                // User has logged time before - use historical analysis
                 this.log(`   ✅ User has previous time entries. Using historical analysis...`);
                 
                 // Extract service IDs from the entries
@@ -1471,11 +1511,11 @@ export class JiraTimeLogger {
                     }).filter(Boolean)
                 );
                 
-                this.log(`   📊 Unique service IDs found: ${Array.from(serviceIds).join(', ')}`);
+                this.log(`    Unique service IDs found: ${Array.from(serviceIds).join(', ')}`);
                 
                 if (serviceIds.size > 0) {
-                    // STEP 2: Test each service from history with real-time logging
-                    this.log(`   🧪 Step 2: Testing services from your history with real-time logging...`);
+                    // Test each service from history with real-time logging
+                    this.log(`   🧪 Testing services from your history with real-time logging...`);
                     
                     const servicesToTest = Array.from(serviceIds).map((serviceId: unknown) => ({
                         id: serviceId as string,
@@ -1544,18 +1584,15 @@ export class JiraTimeLogger {
                         }
                     }
                     
-                    this.log(`   ⚠️ All services from history failed. Moving to Step 3...`);
+                    this.log(`   ⚠️ All services from history failed.`);
                 }
             }
             
-            // STEP 3: Fallback to testing all project services
-            this.log(`   📊 Step 3: Testing all available services for this project...`);
-            return await this.testAllProjectServices(credentials, personId, projectId);
-            
-
+            // If we get here, no services worked - throw error
+            throw new Error('No working services found for this user and project');
             
         } catch (error: any) {
-            throw new Error(`Service discovery failed: ${error.message}`);
+            throw new Error(`Legacy service discovery failed: ${error.message}`);
         }
     }
 

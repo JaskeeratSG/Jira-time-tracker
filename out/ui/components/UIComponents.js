@@ -1090,7 +1090,7 @@ class JavaScriptComponent extends BaseComponent {
                         if (notification.parentElement) {
                             notification.remove();
                         }
-                    }, 5000);
+                    }, 10000);
                 }
 
                 // Authentication handlers
@@ -1205,14 +1205,18 @@ class JavaScriptComponent extends BaseComponent {
                         if (input) input.value = '';
                     });
                 }
-                
+
+                function openJiraTokenHelp() {
+                    // This would open the JIRA API token help page
+                    showNotification('Generate API token at: Your JIRA → Account Settings → Security → API tokens', 'info');
+                }
                 function openApiTokenHelp() {
                     // This would open the JIRA API token help page
                     showNotification('Generate API token at: Your JIRA → Account Settings → Security → API tokens', 'info');
                 }
                 
                 function openProductiveTokenHelp() {
-                    showNotification('Generate API token at: Productive → Settings → API tokens → Personal access tokens', 'info');
+                    showNotification('Generate API token at: Productive → Settings → API Integrations → Generate New Token [read/write]', 'info');
                 }
                 
                 // Make functions available globally
