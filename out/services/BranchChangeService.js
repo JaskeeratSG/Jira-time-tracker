@@ -215,8 +215,9 @@ class BranchChangeService {
             // Log time using the commit message as description
             await this.timeLogger.logTime(ticketInfo.ticketId, elapsedMinutes, event.commitMessage);
             this.outputChannel.appendLine('Time logged successfully for commit');
-            // Show commit time logged notification
-            vscode.window.showInformationMessage(`Time logged for commit: ${elapsedMinutes} minutes to ${ticketInfo.ticketId}`);
+            // Show commit time logged notification (adaptive formatting)
+            const pretty = this.formatDurationForNotification(elapsedMinutes);
+            vscode.window.showInformationMessage(`Time logged for commit: ${pretty} to ${ticketInfo.ticketId}`);
             // Reset the timer after successful logging
             this.timeLogger.stopTimer();
             this.timeLogger.resetTimer();
@@ -225,6 +226,21 @@ class BranchChangeService {
         catch (error) {
             this.outputChannel.appendLine(`Error logging time for commit: ${error}`);
         }
+    }
+    formatDurationForNotification(totalMinutes) {
+        const minutes = Math.max(0, Math.round(totalMinutes));
+        if (minutes < 60) {
+            const label = minutes === 1 ? 'minute' : 'minutes';
+            return `${minutes} ${label}`;
+        }
+        const hours = Math.floor(minutes / 60);
+        const rem = minutes % 60;
+        const hrLabel = hours === 1 ? 'hr' : 'hrs';
+        if (rem === 0) {
+            return `${hours} ${hrLabel}`;
+        }
+        const minLabel = rem === 1 ? 'min' : 'mins';
+        return `${hours} ${hrLabel} ${rem} ${minLabel}`;
     }
     getCurrentBranchInfo() {
         const branchInfo = this.gitService.getCurrentBranchInfo();

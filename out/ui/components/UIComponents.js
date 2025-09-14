@@ -371,6 +371,8 @@ class StylesComponent extends BaseComponent {
                     display: flex;
                     flex-direction: column;
                     gap: 2px;
+                    flex: 1 1 auto;
+                    min-width: 0;
                 }
                 
                 .user-name {
@@ -440,6 +442,15 @@ class StylesComponent extends BaseComponent {
                     cursor: pointer;
                     font-size: 12px;
                     transition: background-color 0.2s ease;
+                    min-width: 110px;
+                    height: 28px;
+                    line-height: 16px;
+                    white-space: nowrap;
+                    flex: 0 0 auto;
+                }
+
+                .current-user .secondary-button {
+                    flex: 0 0 auto;
                 }
                 
                 .secondary-button:hover {
@@ -734,7 +745,8 @@ class StylesComponent extends BaseComponent {
                 .ticket-description {
                     display: flex;
                     flex-direction: column;
-                    gap: 8px;
+                    gap: 12px;
+                    margin-top: 8px;
                 }
                 
                 .label {
@@ -743,6 +755,7 @@ class StylesComponent extends BaseComponent {
                     color: var(--vscode-descriptionForeground);
                     text-transform: uppercase;
                     letter-spacing: 0.5px;
+                    margin-bottom: 4px;
                 }
                 
                 .value {
@@ -751,35 +764,54 @@ class StylesComponent extends BaseComponent {
                     font-weight: 500;
                 }
                 
-                .description-content {
+                .description-container {
                     background: var(--vscode-editor-inactiveSelectionBackground);
-                    padding: 12px;
-                    border-radius: 4px;
+                    border-radius: 8px;
+                    overflow: hidden;
+                    border: 1px solid var(--vscode-widget-border);
+                    transition: all 0.2s ease;
+                    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+                }
+
+                .description-container:hover {
+                    border-color: var(--vscode-focusBorder);
+                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+                    transform: translateY(-1px);
+                }
+
+                .description-text {
+                    padding: 16px;
                     font-size: 13px;
-                    line-height: 1.5;
+                    line-height: 1.6;
                     color: var(--vscode-foreground);
                     max-height: 120px;
-                    overflow-y: auto;
-                    white-space: pre-wrap;
+                    overflow: hidden;
                     position: relative;
+                    word-wrap: break-word;
+                    white-space: pre-wrap;
+                    font-family: var(--vscode-editor-font-family);
                 }
-                
-                .description-content.truncated::after {
+
+                /* (Reverted) No special heading/list formatting inside description-text */
+
+                .description-text.truncated {
+                    mask-image: linear-gradient(to bottom, black 75%, transparent 100%);
+                    -webkit-mask-image: linear-gradient(to bottom, black 75%, transparent 100%);
+                }
+
+                .description-text.truncated::after {
                     content: "...";
                     position: absolute;
-                    bottom: 8px;
-                    right: 12px;
-                    background: var(--vscode-editor-inactiveSelectionBackground);
-                    padding: 0 4px;
+                    bottom: 4px;
+                    right: 16px;
+                    background: var(--vscode-editor-background);
+                    padding: 0 8px;
                     color: var(--vscode-descriptionForeground);
-                    font-size: 12px;
+                    font-size: 14px;
                     font-weight: 600;
-                    border-radius: 2px;
-                }
-                
-                .description-content.truncated {
-                    mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
-                    -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+                    border-radius: 4px;
+                    box-shadow: 0 0 0 3px var(--vscode-editor-background);
+                    font-family: var(--vscode-editor-font-family);
                 }
                 
                 .ticket-actions {
@@ -1199,7 +1231,7 @@ class JavaScriptComponent extends BaseComponent {
                 }
                 
                 function clearSignInForm() {
-                    const inputs = ['jiraUrlInput', 'emailInput', 'apiTokenInput'];
+                    const inputs = ['jiraUrlInput', 'emailInput', 'jiraApiTokenInput', 'productiveApiTokenInput'];
                     inputs.forEach(id => {
                         const input = document.getElementById(id);
                         if (input) input.value = '';
@@ -1220,6 +1252,7 @@ class JavaScriptComponent extends BaseComponent {
                 }
                 
                 // Make functions available globally
+                window.openJiraTokenHelp = openJiraTokenHelp;
                 window.openApiTokenHelp = openApiTokenHelp;
                 window.openProductiveTokenHelp = openProductiveTokenHelp;
                 window.startTimer = startTimer;
@@ -1775,49 +1808,66 @@ class JavaScriptComponent extends BaseComponent {
                         if (ticketSummary) ticketSummary.textContent = ticketData.summary || 'No summary available';
                         if (ticketProject) ticketProject.textContent = ticketData.projectKey || 'Unknown Project';
                         if (ticketStatus) ticketStatus.textContent = ticketData.status || 'Unknown Status';
-                        
-                        // Handle description
+
+                        // Handle description with clickable expand/collapse functionality
                         if (ticketDescriptionContent) {
                             if (ticketData.description) {
                                 const description = ticketData.description;
-                                ticketDescriptionContent.textContent = description;
                                 
-                                // Check if description is too long and needs truncation
+                                // Clear any existing content
+                                ticketDescriptionContent.innerHTML = '';
+                                
+                                // Create improved description container
+                                const descriptionContainer = document.createElement('div');
+                                descriptionContainer.className = 'description-container';
+                                
+                                // Create description text element
+                                const descriptionText = document.createElement('div');
+                                descriptionText.className = 'description-text';
+                                
+                                // Revert to plain text rendering for maximum safety
+                                descriptionText.textContent = description;
+                                
+                                // Add to container
+                                descriptionContainer.appendChild(descriptionText);
+                                ticketDescriptionContent.appendChild(descriptionContainer);
+                                
+                                // Apply truncation with clickable area if needed
                                 if (description.length > 300) {
-                                    // Truncate to 300 characters and add ellipsis
-                                    const truncatedText = description.substring(0, 300);
-                                    ticketDescriptionContent.textContent = truncatedText;
-                                    ticketDescriptionContent.classList.add('truncated');
+                                    descriptionText.classList.add('truncated');
+                                    descriptionContainer.classList.add('clickable');
+                                    descriptionContainer.title = 'Click to expand description';
                                     
-                                    // Add "Show more" functionality
-                                    const showMoreBtn = document.createElement('button');
-                                    showMoreBtn.className = 'action-button';
-                                    showMoreBtn.innerHTML = '<span class="action-icon">📖</span>Show More';
-                                    showMoreBtn.onclick = () => {
-                                        ticketDescriptionContent.textContent = description;
-                                        ticketDescriptionContent.classList.remove('truncated');
-                                        showMoreBtn.remove();
-                                        
-                                        // Add "Show less" button
-                                        const showLessBtn = document.createElement('button');
-                                        showLessBtn.className = 'action-button';
-                                        showLessBtn.innerHTML = '<span class="action-icon">📖</span>Show Less';
-                                        showLessBtn.onclick = () => {
-                                            ticketDescriptionContent.textContent = truncatedText;
-                                            ticketDescriptionContent.classList.add('truncated');
-                                            showLessBtn.remove();
-                                            ticketDescriptionContent.parentNode.appendChild(showMoreBtn);
-                                        };
-                                        ticketDescriptionContent.parentNode.appendChild(showLessBtn);
+                                    // Add click handler to expand/collapse
+                                    descriptionContainer.onclick = () => {
+                                        if (descriptionText.classList.contains('truncated')) {
+                                            // Expand
+                                            descriptionText.classList.remove('truncated');
+                                            descriptionText.style.maxHeight = 'none';
+                                            descriptionContainer.classList.remove('clickable');
+                                            descriptionContainer.classList.add('expanded');
+                                            descriptionContainer.title = 'Click to collapse description';
+                                            
+                                            // Add "Show less" indicator
+                                            const showLessIndicator = document.createElement('div');
+                                            showLessIndicator.className = 'show-less-indicator';
+                                            showLessIndicator.innerHTML = '<span class="show-less-text">Show less</span>';
+                                            descriptionContainer.appendChild(showLessIndicator);
+                                        } else {
+                                            // Collapse
+                                            descriptionText.classList.add('truncated');
+                                            descriptionText.style.maxHeight = '120px';
+                                            descriptionContainer.classList.add('clickable');
+                                            descriptionContainer.classList.remove('expanded');
+                                            descriptionContainer.title = 'Click to expand description';
+                                            
+                                            // Remove "Show less" indicator
+                                            const showLessIndicator = descriptionContainer.querySelector('.show-less-indicator');
+                                            if (showLessIndicator) {
+                                                showLessIndicator.remove();
+                                            }
+                                        }
                                     };
-                                    
-                                    // Add show more button to ticket actions
-                                    const ticketActions = document.querySelector('.ticket-actions');
-                                    if (ticketActions) {
-                                        ticketActions.appendChild(showMoreBtn);
-                                    }
-                                } else {
-                                    ticketDescriptionContent.classList.remove('truncated');
                                 }
                                 
                                 if (ticketDescription) ticketDescription.style.display = 'flex';
@@ -1911,24 +1961,41 @@ class JavaScriptComponent extends BaseComponent {
                     existingShowButtons.forEach(btn => btn.remove());
                 }
 
-                // Initialize everything
+                // Initialize everything safely
                 updateButtonStates();
 
-                document.addEventListener('DOMContentLoaded', function() {
-                    setupAuthenticationHandlers();
-                    checkAuthenticationStatus();
-                    loadGitEmail();
-                    initializeSmartSearch();
-                    
-                    // Update legacy load projects button to work with authentication
-                    const loadProjectsBtn = document.getElementById('loadProjectsBtn');
-                    if (loadProjectsBtn) {
-                        loadProjectsBtn.addEventListener('click', loadProjectsForUser);
+                function initializeUI() {
+                    try {
+                        setupAuthenticationHandlers();
+                        checkAuthenticationStatus();
+                        loadGitEmail();
+                        initializeSmartSearch();
+
+                        const loadProjectsBtn = document.getElementById('loadProjectsBtn');
+                        if (loadProjectsBtn) {
+                            loadProjectsBtn.addEventListener('click', loadProjectsForUser);
+                        }
+
+                        // Ensure default status indicator is visible as inactive on first load
+                        const statusText = document.getElementById('statusText');
+                        const statusDot = document.getElementById('statusDot');
+                        if (statusText) statusText.textContent = 'Inactive';
+                        if (statusDot) statusDot.className = 'status-dot status-inactive';
+
+                        // Request current ticket info from extension
+                        vscode.postMessage({ type: 'getCurrentTicketInfo' });
+                    } catch (e) {
+                        console.error('UI initialization failed:', e);
                     }
-                    
-                    // Request current ticket info from extension
-                    vscode.postMessage({ type: 'getCurrentTicketInfo' });
-                });
+                }
+
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', initializeUI);
+                } else {
+                    initializeUI();
+                }
+
+                // (Reverted) Removed custom formatter; using plain text for description
             </script>
         `;
     }

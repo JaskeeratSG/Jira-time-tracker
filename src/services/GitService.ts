@@ -436,6 +436,14 @@ export class GitService {
                         this.lastKnownCommits.set(repoPath, currentCommit);
                         return;
                     }
+
+                    // Check if this commit was a manual commit (vs pull/merge/checkout)
+                    const isManual = await this.isManualCommit(repoPath, currentCommit);
+                    if (!isManual) {
+                        this.outputChannel.appendLine(`⏭️ [PERIODIC CHECK] Commit ${currentCommit.substring(0, 8)} is not a manual commit (likely pull/merge/checkout), skipping`);
+                        this.lastKnownCommits.set(repoPath, currentCommit);
+                        return;
+                    }
                     
                     // Get commit message and current branch
                     const commitMessage = commitDetails.message;
@@ -570,12 +578,35 @@ export class GitService {
 
             if (lastKnownCommit && lastKnownCommit !== currentCommit && currentCommit !== 'unknown') {
                 this.outputChannel.appendLine(`📝 New commit detected in ${repoPath}: ${lastKnownCommit} → ${currentCommit}`);
-                const commitMessage = await this.getLastCommitMessage(repoPath);
+
+                // Get commit details including author
+                const commitDetails = await this.getCommitDetails(repoPath, currentCommit);
+                if (!commitDetails) {
+                    this.outputChannel.appendLine(`❌ [COMMIT DEBUG] Could not get commit details for ${currentCommit}`);
+                    this.lastKnownCommits.set(repoPath, currentCommit);
+                    return;
+                }
+
+                // Filter: Only commits by current user
+                if (!this.isCommitByCurrentUser(commitDetails.author)) {
+                    this.outputChannel.appendLine(`⏭️ [COMMIT DEBUG] Commit ${currentCommit.substring(0, 8)} by ${commitDetails.author}, not by current user, skipping`);
+                    this.lastKnownCommits.set(repoPath, currentCommit);
+                    return;
+                }
+
+                // Filter: Only manual commits (exclude pull/merge/checkout/rebase)
+                const isManual = await this.isManualCommit(repoPath, currentCommit);
+                if (!isManual) {
+                    this.outputChannel.appendLine(`⏭️ [COMMIT DEBUG] Commit ${currentCommit.substring(0, 8)} is not a manual commit, skipping`);
+                    this.lastKnownCommits.set(repoPath, currentCommit);
+                    return;
+                }
+
                 const event: CommitEvent = {
                     workspacePath: repoPath,
                     branch: currentBranch,
                     commitHash: currentCommit,
-                    commitMessage: commitMessage || `Commit ${currentCommit.substring(0, 8)}`,
+                    commitMessage: commitDetails.message || `Commit ${currentCommit.substring(0, 8)}`,
                     timestamp: Date.now()
                 };
                 this.lastKnownCommits.set(repoPath, currentCommit);
@@ -789,32 +820,58 @@ export class GitService {
         // Check for commit change (new commit on same branch or initial commit)
         if (lastKnownCommit && lastKnownCommit !== newCommit && newCommit !== 'unknown') {
             this.outputChannel.appendLine(`📝 New commit detected in ${repoPath}: ${lastKnownCommit} → ${newCommit}`);
-            
-            // Get commit message (this would require additional Git API calls)
-            // For now, we'll use a placeholder and get the actual message when needed
-            const commitMessage = `Commit ${newCommit.substring(0, 8)}`;
-            
-            const event: CommitEvent = {
-                workspacePath: repoPath,
-                branch: newBranch,
-                commitHash: newCommit,
-                commitMessage: commitMessage,
-                timestamp: Date.now(),
-                repository: repo
-            };
 
-            // Update the last known commit
-            this.lastKnownCommits.set(repoPath, newCommit);
-
-            // Notify commit callbacks
-            this.commitCallbacks.forEach(callback => {
+            (async () => {
                 try {
-                    this.outputChannel.appendLine(`📝 Notifying commit callback...`);
-                    callback(event);
-                } catch (error) {
-                    this.outputChannel.appendLine(`Error in commit callback: ${error}`);
+                    // Get commit details including author
+                    const commitDetails = await this.getCommitDetails(repoPath, newCommit);
+                    if (!commitDetails) {
+                        this.outputChannel.appendLine(`❌ [REPO STATE] Could not get commit details for ${newCommit}`);
+                        this.lastKnownCommits.set(repoPath, newCommit);
+                        return;
+                    }
+
+                    // Only proceed if commit is by current user
+                    if (!this.isCommitByCurrentUser(commitDetails.author)) {
+                        this.outputChannel.appendLine(`⏭️ [REPO STATE] Commit ${newCommit.substring(0, 8)} by ${commitDetails.author}, not by current user, skipping`);
+                        this.lastKnownCommits.set(repoPath, newCommit);
+                        return;
+                    }
+
+                    // Only proceed if commit is a manual commit
+                    const isManual = await this.isManualCommit(repoPath, newCommit);
+                    if (!isManual) {
+                        this.outputChannel.appendLine(`⏭️ [REPO STATE] Commit ${newCommit.substring(0, 8)} is not a manual commit, skipping`);
+                        this.lastKnownCommits.set(repoPath, newCommit);
+                        return;
+                    }
+
+                    const event: CommitEvent = {
+                        workspacePath: repoPath,
+                        branch: newBranch,
+                        commitHash: newCommit,
+                        commitMessage: commitDetails.message || `Commit ${newCommit.substring(0, 8)}`,
+                        timestamp: Date.now(),
+                        repository: repo
+                    };
+
+                    // Update the last known commit
+                    this.lastKnownCommits.set(repoPath, newCommit);
+
+                    // Notify commit callbacks
+                    this.commitCallbacks.forEach(callback => {
+                        try {
+                            this.outputChannel.appendLine(`📝 Notifying commit callback...`);
+                            callback(event);
+                        } catch (error) {
+                            this.outputChannel.appendLine(`Error in commit callback: ${error}`);
+                        }
+                    });
+                } catch (innerError) {
+                    this.outputChannel.appendLine(`❌ [REPO STATE] Error processing new commit: ${innerError}`);
+                    this.lastKnownCommits.set(repoPath, newCommit);
                 }
-            });
+            })();
         }
 
         // Initialize commit tracking if not previously tracked
@@ -1327,6 +1384,44 @@ export class GitService {
         const isCurrentUser = author.toLowerCase() === this.currentUserEmail.toLowerCase();
         this.outputChannel.appendLine(`🔍 [PERIODIC CHECK] Commit author email: ${author}, current user email: ${this.currentUserEmail}, match: ${isCurrentUser}`);
         return isCurrentUser;
+    }
+
+    /**
+     * Determine whether the HEAD move to the given commit was due to a manual commit action
+     * (i.e., initiated by `git commit` or VS Code Source Control), not by pull/merge/checkout.
+     */
+    private async isManualCommit(repoPath: string, commitHash: string): Promise<boolean> {
+        try {
+            const { exec } = require('child_process');
+            const { promisify } = require('util');
+            const execAsync = promisify(exec);
+
+            // Look at the last few reflog entries for HEAD and try to match the new commit hash
+            // %H = commit hash, %gs = reflog selector (summary like "commit: msg", "pull: ...", "checkout: ...")
+            const { stdout } = await execAsync('git reflog --pretty="%H|%gs" -n 10', { cwd: repoPath });
+            const lines: string[] = stdout.split('\n').map((l: string) => l.trim()).filter(Boolean);
+            for (const line of lines) {
+                const [hash, summary] = line.split('|');
+                if (!hash || !summary) continue;
+                if (hash === commitHash) {
+                    const lower = summary.toLowerCase();
+                    const isCommit = lower.startsWith('commit'); // e.g., "commit: msg", "commit (amend): msg"
+                    this.outputChannel.appendLine(`🔍 [REFLOG] Matched reflog for ${commitHash.substring(0, 8)} → "${summary}" → manual=${isCommit}`);
+                    return isCommit;
+                }
+            }
+
+            // Fallback: check the most recent reflog entry summary as a heuristic
+            const { stdout: latestStdout } = await execAsync('git reflog -1 --pretty="%gs"', { cwd: repoPath });
+            const latest = (latestStdout || '').trim().toLowerCase();
+            const isCommitHeuristic = latest.startsWith('commit');
+            this.outputChannel.appendLine(`🔍 [REFLOG] Fallback latest entry "${latest}" → manual=${isCommitHeuristic}`);
+            return isCommitHeuristic;
+        } catch (error) {
+            this.outputChannel.appendLine(`❌ [REFLOG] Error determining manual commit: ${error}`);
+            // In doubt, do not treat as manual to avoid false positives
+            return false;
+        }
     }
 
     /**

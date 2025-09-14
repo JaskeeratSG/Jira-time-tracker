@@ -359,8 +359,9 @@ export class JiraTimeLogger {
                 // Use the enhanced logTime method that includes Productive integration
                 await this.logTime(ticketId, timeSpent, description);
                 
-                // Show time logged notification
-                vscode.window.showInformationMessage(`Time logged: ${timeSpent} minutes to ${ticketId}`);
+                // Show time logged notification (adaptive: minutes < 60, else hours and minutes)
+                const pretty = this.formatDurationForNotification(timeSpent);
+                vscode.window.showInformationMessage(`Time logged: ${pretty} to ${ticketId}`);
                 
                 this.resetTimer();
                 this.currentIssue = null;
@@ -1788,6 +1789,25 @@ export class JiraTimeLogger {
             totalTime = Date.now() - this.startTime;
         }
         return Math.round(totalTime / 1000 / 60);
+    }
+
+    /**
+     * Format duration for notifications: e.g., "55 minutes" or "1 hr 25 mins" or "2 hrs".
+     */
+    private formatDurationForNotification(totalMinutes: number): string {
+        const minutes = Math.max(0, Math.round(totalMinutes));
+        if (minutes < 60) {
+            const label = minutes === 1 ? 'minute' : 'minutes';
+            return `${minutes} ${label}`;
+        }
+        const hours = Math.floor(minutes / 60);
+        const rem = minutes % 60;
+        const hrLabel = hours === 1 ? 'hr' : 'hrs';
+        if (rem === 0) {
+            return `${hours} ${hrLabel}`;
+        }
+        const minLabel = rem === 1 ? 'min' : 'mins';
+        return `${hours} ${hrLabel} ${rem} ${minLabel}`;
     }
 
     public async getBranchTicketInfo(): Promise<{ projectKey: string; issueKey: string } | null> {
